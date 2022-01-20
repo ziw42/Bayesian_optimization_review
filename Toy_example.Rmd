@@ -1,5 +1,5 @@
 ---
-title: "Toy_example"
+title: "A toy example of Bayesian Optimization"
 author: "Zian Wang"
 date: "1/14/2022"
 output: html_document
@@ -9,11 +9,9 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-## R Markdown
+## Introduce
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-This is a toy example of application of Bayesian Optimization.
+This is a toy example of application of Bayesian Optimization. We will use the Bayesian Optimization to find the maximum value of one simple function.
 
 ```{r packages}
 ### install.packages("GPfit")
@@ -28,12 +26,31 @@ library(purrr)
 We will optimize this simple function:
 
 $$\left(6x-2\right)^2sin\left(12x-4\right)$$
-First we difine the function in R, then generate n0 initial points.
+
+First we define the function in R, then draw the graph of this function in the axes, and generate n0 initial points.
 
 ```{r preparation}
 ### Generate the function
 f <- function(x) {
-  return((6 * x - 2)^2 * sin(12 * x - 4))
+  return((6*x-2)^2*sin(12*x-4))
+}
+
+### Draw the graph of this function
+x <- seq(0, 1, by=0.0001)
+y <- f(x)
+graph_data <- data.frame(x, y)
+graph_data %>% ggplot() +
+  geom_point(mapping = aes(x = x, y = y), size = 0.01, color = "navyblue") +
+  theme_bw()
+
+y_min <- min(y)
+
+min <- 0
+for (i in x) {
+  if(f(i) < min) {
+    min <- f(i)
+    x_min <- i
+  }
 }
 
 ### Generate the initial points
@@ -111,15 +128,15 @@ probability_improvement <- map2_dbl(
   }
 )
 
-x_next <- x_new[which.max(probability_improvement)]
+x_next_POI <- x_new[which.max(probability_improvement)]
 
 ggplot() +
   geom_line(mapping = aes(x = x_new, y = probability_improvement), color = "navyblue") +
-  geom_vline(mapping = aes(xintercept = x_next), color = "red", linetype = "dashed") +
+  geom_vline(mapping = aes(xintercept = x_next_POI), color = "red", linetype = "dashed") +
   xlab("x") +
   theme_bw()
 
-plot(x_next)
+plot(x_next_POI)
 ```
 
 2. Expected improvement
@@ -135,15 +152,15 @@ expected_improvement <- map2_dbl(
   }
 )
 
-x_next <- x_new[which.max(expected_improvement)]
+x_next_EI <- x_new[which.max(expected_improvement)]
 
 ggplot() +
   geom_line(mapping = aes(x = x_new, y = expected_improvement), color = "navyblue") +
-  geom_vline(mapping = aes(xintercept = x_next), color = "red", linetype = "dashed") +
+  geom_vline(mapping = aes(xintercept = x_next_EI), color = "red", linetype = "dashed") +
   xlab("x") +
   theme_bw() 
 
-plot(x_next)
+plot(x_next_EI)
 ```
 
 3. GP lower confidence bound
@@ -165,6 +182,65 @@ ggplot() +
 plot(x_next)
 ```
 
+## Optimization
+
+In the last section, we discussed how Bayesian optimization works in one loop. In this section, we will continue looping until we got the optimized value of the simple function.
+
+We will use the "probability of improvement" aquisition function. Let us assume we have 10 chances to evaluate.
+
+```{r, optimization}
+t <- 1
+while(t <= 10) {
+  evaluation[nrow(evaluation)+1,] = c(x_next_EI, f(x_next_EI))
+
+  fit <- GP_fit(
+    X = evaluation[, "x"],
+    Y = evaluation[, "y"],
+    corr = list(type = "exponential", power = 1.95)
+  )
+
+  x_new <- seq(0, 1, length.out = 100)
+  pred <- predict.GP(fit, xnew = data.frame(x = x_new))
+  mu <- pred$Y_hat
+  sigma <- sqrt(pred$MSE)
+
+  pred <- pred %>% data.frame()
+  print(ggplot() +
+    geom_line(mapping = aes(x = pred$complete_data.xnew.1, y = pred$Y_hat), color = "gold") +
+    geom_ribbon(mapping = aes(x = pred$complete_data.xnew.1, y = pred$Y_hat, xmin = 0, xmax = 1, ymin = pred$Y_hat-sqrt(pred$MSE), ymax = pred$Y_hat+sqrt(pred$MSE)), fill = "navyblue", alpha = 0.3) +
+    geom_point(mapping = aes(x = evaluation[, "x"], y = evaluation[, "y"]), color = "navyblue") +
+    xlab("x") +
+    ylab("f(x)") +
+    ggtitle(paste("The", t, "times evaluation.")) +
+    theme_bw())
+
+  expected_improvement <- map2_dbl(
+    mu, sigma,
+    function(m, s) {
+      if (s == 0) return(0)
+      gamma <- (y_best - m) / s
+      phi <- pnorm(gamma)
+      return(s * (gamma * phi + dnorm(gamma)))
+    }
+  )
+  x_next_EI <- x_new[which.max(expected_improvement)]
+  
+  t <- t+1
+}
+```
+
+Then we pick the x value that has the minimal f(x) value from what we evaluated.
+
+```{r pick_min}
+### Pick the x that has the minimal f(x) value from what we evaluated.
+cat("The opmized x we find is", evaluation[which.min(evaluation$y),]$x)
+### Compare it with the real x that minimize f(x) in [0,1]
+cat("The real optimized x is", x_min)
+```
+
+We can see that we use 10 evaluations to get the x, and the result is pretty close to the real one.
+
+## Reference
 
 Most of the codes are from this website!!!
 
