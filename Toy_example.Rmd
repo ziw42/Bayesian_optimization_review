@@ -2,11 +2,13 @@
 title: "A toy example of Bayesian Optimization"
 author: "Zian Wang"
 date: "1/14/2022"
-output: html_document
+output: 
+  html_document: 
+    code_folding: hide
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 ```
 
 ## Introduce
@@ -435,9 +437,7 @@ print(plot_1)
 print(plot_2)
 ```
 
-## Unmodified part
-
-We will use the "expected improvement" acquisition function. Let us assume we have 10 chances to evaluate.
+Here we give a detailed example to show the Expected Improvement acqusition function.
 
 ```{r, optimization}
 t <- 1
@@ -517,9 +517,12 @@ for(t in ini_guess) {
   n <- n+1
 }
 ```
+
 We can see there are two disadvantages of quasi-Newton method. The first one is we have to choose a "good" initial guess to find the global optimum. In our example, if the initial guess is bigger than 0.5, the quasi-Newton method will find a local optimum.
 
-The second one is it will need more times of iteration to get the optimal value. The minumum number of iteration in our example is 13 times, which is 3 times more than our Bayesian optimization example.
+The second one is it will need more times of iteration to get the optimal value. The minimum number of iteration in our example is 13 times, which is 3 times more than our Bayesian optimization example.
+
+Also, because here we use a simple function. If we want to optimize a complex function, which cannot or very difficult to get the derivatives, the quasi-Newton method cannot or hard to find the optimum, but the Bayesian optimization can do that.
 
 
 ## Reference
