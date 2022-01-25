@@ -171,15 +171,15 @@ lower_confidence_bound <- mu - kappa * sigma
 # if maximizing: upper_confidence_bound <- mu + kappa * sigma
 
 ### Notice here is min, not max.
-x_next <- x_new[which.min(lower_confidence_bound)]
+x_next_LCB <- x_new[which.min(lower_confidence_bound)]
 
 ggplot() +
   geom_line(mapping = aes(x = x_new, y = lower_confidence_bound), color = "navyblue") +
-  geom_vline(mapping = aes(xintercept = x_next), color = "red", linetype = "dashed") +
+  geom_vline(mapping = aes(xintercept = x_next_LCB), color = "red", linetype = "dashed") +
   xlab("x") +
   theme_bw() 
 
-plot(x_next)
+plot(x_next_LCB)
 ```
 
 ## Optimization
@@ -193,6 +193,7 @@ Firstly we will choose a "good" acquisition function.
 This acquisition function measures the likelihood that the next x is better(lower or higher depends on our goal) than the current optimal value.
 
 ```{r POI_iteration}
+evaluation_t <- evaluation
 t <- 1
 data <- data.frame()
 data$Y_hat <- c()
@@ -200,6 +201,94 @@ data$MSE <- c()
 data$iteration <- c()
 data$x_x <- c()
 data$y_y <- c()
+acq_data = data.frame()
+while(t <= 10) {
+  evaluation[nrow(evaluation)+1,] = c(x_next_POI, f(x_next_POI))
+
+  fit <- GP_fit(
+    X = evaluation[, "x"],
+    Y = evaluation[, "y"],
+    corr = list(type = "exponential", power = 1.95)
+  )
+
+  x_new <- seq(0, 1, length.out = 100)
+  pred <- predict.GP(fit, xnew = data.frame(x = x_new))
+  mu <- pred$Y_hat
+  sigma <- sqrt(pred$MSE)
+  pred <- pred %>% data.frame() %>% select(c("Y_hat", "MSE", "complete_data.xnew.1"))
+  pred <- pred %>% mutate("iteration" = t) %>% mutate("x_x" = NA) %>% mutate("y_y" = NA)
+  data <- rbind(data, pred)
+  
+  probability_improvement <- map2_dbl(
+    mu,
+    sigma,
+    function(m, s) {
+      if (s == 0) return(0)
+      else {
+        poi <- pnorm((y_best - m) / s)
+        # poi <- 1 - poi (if maximizing)
+        return(poi)
+      }
+    }
+  )
+  x_next_POI <- x_new[which.max(probability_improvement)]
+  probability_improvement <- probability_improvement %>% as.data.frame()
+  colnames(probability_improvement) <- "probability_improvement"
+  probability_improvement <- probability_improvement %>% 
+    mutate("iteration" = t) %>% 
+    mutate("x_next_POI" = NA)
+  acq_data <- rbind(acq_data, probability_improvement)
+  x_next_df <- data.frame(x_next_POI) %>% mutate("probability_improvement" = NA) %>% mutate("iteration" = t)
+  acq_data <- rbind(acq_data, x_next_df)
+  t <- t+1
+}
+t <- 1
+nr <- nrow(data)
+for (i in 5:14) {
+  for (j in 1:i) {
+    data[nr + t,] = c(NA, NA, NA, i-4, evaluation[j, 1], evaluation[j, 2])
+    t <- t+1
+  }
+}
+
+plot_1 <- data %>% ggplot() +
+    geom_line(mapping = aes(x = complete_data.xnew.1, y = Y_hat), color = "gold") +
+    geom_ribbon(mapping = aes(x = complete_data.xnew.1, y = Y_hat, xmin = 0, xmax = 1, ymin = Y_hat-sqrt(MSE), ymax = Y_hat+sqrt(MSE)), fill = "navyblue", alpha = 0.3) +
+    geom_point(mapping = aes(x = x_x, y = y_y)) +
+    facet_grid(~iteration) +
+    xlab("x") +
+    ylab("f(x)") +
+    theme_bw()
+
+x_new_df <- rep(c(x_new, NA),10) %>% as.data.frame()
+colnames(x_new_df) <- "x_new"
+acq_data <- cbind(acq_data, x_new_df)
+plot_2 <- acq_data %>% ggplot() +
+  geom_line(mapping = aes(x = x_new, y = probability_improvement), color = "navyblue") +
+  geom_vline(mapping = aes(xintercept = x_next_POI), color = "red", linetype = "dashed") +
+  xlab("x") +
+  facet_grid(~ iteration) +
+  theme_bw()
+
+print(plot_1)
+print(plot_2)
+```
+
+
+### Expected improvment
+
+This acquisition function takes how large the improvement is into account.
+
+```{r EI_iteration}
+evaluation <- evaluation_t
+t <- 1
+data <- data.frame()
+data$Y_hat <- c()
+data$MSE <- c()
+data$iteration <- c()
+data$x_x <- c()
+data$y_y <- c()
+acq_data = data.frame()
 while(t <= 10) {
   evaluation[nrow(evaluation)+1,] = c(x_next_EI, f(x_next_EI))
 
@@ -226,8 +315,16 @@ while(t <= 10) {
       return(s * (gamma * phi + dnorm(gamma)))
     }
   )
-  x_next_EI <- x_new[which.max(expected_improvement)]
   
+  x_next_EI <- x_new[which.max(expected_improvement)]
+  expected_improvement <- expected_improvement %>% as.data.frame()
+  colnames(expected_improvement) <- "expected_improvement"
+  expected_improvement <- expected_improvement %>% 
+    mutate("iteration" = t) %>% 
+    mutate("x_next_EI" = NA)
+  acq_data <- rbind(acq_data, expected_improvement)
+  x_next_df <- data.frame(x_next_EI) %>% mutate("expected_improvement" = NA) %>% mutate("iteration" = t)
+  acq_data <- rbind(acq_data, x_next_df)
   t <- t+1
 }
 t <- 1
@@ -238,7 +335,8 @@ for (i in 5:14) {
     t <- t+1
   }
 }
-data %>% ggplot() +
+
+plot_1 <- data %>% ggplot() +
     geom_line(mapping = aes(x = complete_data.xnew.1, y = Y_hat), color = "gold") +
     geom_ribbon(mapping = aes(x = complete_data.xnew.1, y = Y_hat, xmin = 0, xmax = 1, ymin = Y_hat-sqrt(MSE), ymax = Y_hat+sqrt(MSE)), fill = "navyblue", alpha = 0.3) +
     geom_point(mapping = aes(x = x_x, y = y_y)) +
@@ -246,7 +344,98 @@ data %>% ggplot() +
     xlab("x") +
     ylab("f(x)") +
     theme_bw()
+
+x_new_df <- rep(c(x_new, NA),10) %>% as.data.frame()
+colnames(x_new_df) <- "x_new"
+acq_data <- cbind(acq_data, x_new_df)
+plot_2 <- acq_data %>% ggplot() +
+  geom_line(mapping = aes(x = x_new, y = expected_improvement), color = "navyblue") +
+  geom_vline(mapping = aes(xintercept = x_next_EI), color = "red", linetype = "dashed") +
+  xlab("x") +
+  facet_grid(~ iteration) +
+  theme_bw()
+
+print(plot_1)
+print(plot_2)
 ```
+
+## GP lower confidence bound
+
+This acquisition functions balances the area where mean(x) is large and the area where sigma(x) is large. In other words, this acquisition function trades off between exploration and exploitation.
+
+```{r GP_LCB}
+evaluation <- evaluation_t
+t <- 1
+data <- data.frame()
+data$Y_hat <- c()
+data$MSE <- c()
+data$iteration <- c()
+data$x_x <- c()
+data$y_y <- c()
+acq_data = data.frame()
+while(t <= 8) {
+  evaluation[nrow(evaluation)+1,] = c(x_next_LCB, f(x_next_LCB))
+
+  fit <- GP_fit(
+    X = evaluation[, "x"],
+    Y = evaluation[, "y"],
+    corr = list(type = "exponential", power = 1.95)
+  )
+
+  x_new <- seq(0, 1, length.out = 100)
+  pred <- predict.GP(fit, xnew = data.frame(x = x_new))
+  mu <- pred$Y_hat
+  sigma <- sqrt(pred$MSE)
+  pred <- pred %>% data.frame() %>% select(c("Y_hat", "MSE", "complete_data.xnew.1"))
+  pred <- pred %>% mutate("iteration" = t) %>% mutate("x_x" = NA) %>% mutate("y_y" = NA)
+  data <- rbind(data, pred)
+  
+  lower_confidence_bound <- mu - kappa * sigma
+  
+  x_next_LCB <- x_new[which.min(lower_confidence_bound)]
+  lower_confidence_bound <- lower_confidence_bound %>% as.data.frame()
+  colnames(lower_confidence_bound) <- "lower_confidence_bound"
+  lower_confidence_bound <- lower_confidence_bound %>% 
+    mutate("iteration" = t) %>% 
+    mutate("x_next_LCB" = NA)
+  acq_data <- rbind(acq_data, lower_confidence_bound)
+  x_next_df <- data.frame(x_next_LCB) %>% mutate("lower_confidence_bound" = NA) %>% mutate("iteration" = t)
+  acq_data <- rbind(acq_data, x_next_df)
+  t <- t+1
+}
+t <- 1
+nr <- nrow(data)
+for (i in 5:12) {
+  for (j in 1:i) {
+    data[nr + t,] = c(NA, NA, NA, i-4, evaluation[j, 1], evaluation[j, 2])
+    t <- t+1
+  }
+}
+
+plot_1 <- data %>% ggplot() +
+    geom_line(mapping = aes(x = complete_data.xnew.1, y = Y_hat), color = "gold") +
+    geom_ribbon(mapping = aes(x = complete_data.xnew.1, y = Y_hat, xmin = 0, xmax = 1, ymin = Y_hat-sqrt(MSE), ymax = Y_hat+sqrt(MSE)), fill = "navyblue", alpha = 0.3) +
+    geom_point(mapping = aes(x = x_x, y = y_y)) +
+    facet_grid(~iteration) +
+    xlab("x") +
+    ylab("f(x)") +
+    theme_bw()
+
+x_new_df <- rep(c(x_new, NA),8) %>% as.data.frame()
+colnames(x_new_df) <- "x_new"
+acq_data <- cbind(acq_data, x_new_df)
+plot_2 <- acq_data %>% ggplot() +
+  geom_line(mapping = aes(x = x_new, y = lower_confidence_bound), color = "navyblue") +
+  geom_vline(mapping = aes(xintercept = x_next_LCB), color = "red", linetype = "dashed") +
+  xlab("x") +
+  facet_grid(~ iteration) +
+  theme_bw()
+
+print(plot_1)
+print(plot_2)
+```
+
+## Unmodified part
 
 We will use the "expected improvement" acquisition function. Let us assume we have 10 chances to evaluate.
 
