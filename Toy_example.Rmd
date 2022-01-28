@@ -204,6 +204,16 @@ data$iteration <- c()
 data$x_x <- c()
 data$y_y <- c()
 acq_data = data.frame()
+probability_improvement <- probability_improvement %>% 
+  as.data.frame() %>%
+  mutate("iteration" = 1) %>% 
+  mutate("x_next_POI" = NA)
+colnames(probability_improvement) <- c("probability_improvement", "iteration", "x_next_POI")
+acq_data <- rbind(acq_data, probability_improvement)
+x_next_df_POI <- data.frame(x_next_POI) %>% mutate("probability_improvement" = NA) %>% mutate("iteration" = 1)
+colnames(x_next_df_POI) <- c("x_next_POI", "probability_improvement", "iteration")
+acq_data <- rbind(acq_data, x_next_df_POI)
+
 while(t <= 10) {
   evaluation[nrow(evaluation)+1,] = c(x_next_POI, f(x_next_POI))
 
@@ -237,10 +247,10 @@ while(t <= 10) {
   probability_improvement <- probability_improvement %>% as.data.frame()
   colnames(probability_improvement) <- "probability_improvement"
   probability_improvement <- probability_improvement %>% 
-    mutate("iteration" = t) %>% 
+    mutate("iteration" = t+1) %>% 
     mutate("x_next_POI" = NA)
   acq_data <- rbind(acq_data, probability_improvement)
-  x_next_df <- data.frame(x_next_POI) %>% mutate("probability_improvement" = NA) %>% mutate("iteration" = t)
+  x_next_df <- data.frame(x_next_POI) %>% mutate("probability_improvement" = NA) %>% mutate("iteration" = t+1)
   acq_data <- rbind(acq_data, x_next_df)
   t <- t+1
 }
@@ -257,19 +267,19 @@ plot_1 <- data %>% ggplot() +
     geom_line(mapping = aes(x = complete_data.xnew.1, y = Y_hat), color = "gold") +
     geom_ribbon(mapping = aes(x = complete_data.xnew.1, y = Y_hat, xmin = 0, xmax = 1, ymin = Y_hat-sqrt(MSE), ymax = Y_hat+sqrt(MSE)), fill = "navyblue", alpha = 0.3) +
     geom_point(mapping = aes(x = x_x, y = y_y)) +
-    facet_grid(~iteration) +
+    facet_wrap(~iteration) +
     xlab("x") +
     ylab("f(x)") +
     theme_bw()
 
 x_new_df <- rep(c(x_new, NA),10) %>% as.data.frame()
 colnames(x_new_df) <- "x_new"
-acq_data <- cbind(acq_data, x_new_df)
+acq_data <- cbind(acq_data %>% filter(iteration<11), x_new_df)
 plot_2 <- acq_data %>% ggplot() +
   geom_line(mapping = aes(x = x_new, y = probability_improvement), color = "navyblue") +
   geom_vline(mapping = aes(xintercept = x_next_POI), color = "red", linetype = "dashed") +
   xlab("x") +
-  facet_grid(~ iteration) +
+  facet_wrap(~ iteration) +
   theme_bw()
 
 print(plot_1)
@@ -291,6 +301,16 @@ data$iteration <- c()
 data$x_x <- c()
 data$y_y <- c()
 acq_data = data.frame()
+expected_improvement <- expected_improvement %>% 
+  as.data.frame() %>%
+  mutate("iteration" = 1) %>% 
+  mutate("x_next_EI" = NA)
+colnames(expected_improvement) <- c("expected_improvement", "iteration", "x_next_EI")
+acq_data <- rbind(acq_data, expected_improvement)
+x_next_df_EI <- data.frame(x_next_EI) %>% mutate("expected_improvement" = NA) %>% mutate("iteration" = 1)
+colnames(x_next_df_EI) <- c("x_next_EI", "expected_improvement", "iteration")
+acq_data <- rbind(acq_data, x_next_df_EI)
+
 while(t <= 10) {
   evaluation[nrow(evaluation)+1,] = c(x_next_EI, f(x_next_EI))
 
@@ -322,10 +342,10 @@ while(t <= 10) {
   expected_improvement <- expected_improvement %>% as.data.frame()
   colnames(expected_improvement) <- "expected_improvement"
   expected_improvement <- expected_improvement %>% 
-    mutate("iteration" = t) %>% 
+    mutate("iteration" = t+1) %>% 
     mutate("x_next_EI" = NA)
   acq_data <- rbind(acq_data, expected_improvement)
-  x_next_df <- data.frame(x_next_EI) %>% mutate("expected_improvement" = NA) %>% mutate("iteration" = t)
+  x_next_df <- data.frame(x_next_EI) %>% mutate("expected_improvement" = NA) %>% mutate("iteration" = t+1)
   acq_data <- rbind(acq_data, x_next_df)
   t <- t+1
 }
@@ -342,23 +362,26 @@ plot_1 <- data %>% ggplot() +
     geom_line(mapping = aes(x = complete_data.xnew.1, y = Y_hat), color = "gold") +
     geom_ribbon(mapping = aes(x = complete_data.xnew.1, y = Y_hat, xmin = 0, xmax = 1, ymin = Y_hat-sqrt(MSE), ymax = Y_hat+sqrt(MSE)), fill = "navyblue", alpha = 0.3) +
     geom_point(mapping = aes(x = x_x, y = y_y)) +
-    facet_grid(~iteration) +
+    facet_wrap(~iteration) +
     xlab("x") +
     ylab("f(x)") +
     theme_bw()
 
 x_new_df <- rep(c(x_new, NA),10) %>% as.data.frame()
 colnames(x_new_df) <- "x_new"
-acq_data <- cbind(acq_data, x_new_df)
+acq_data <- cbind(acq_data %>% filter(iteration < 11), x_new_df)
 plot_2 <- acq_data %>% ggplot() +
   geom_line(mapping = aes(x = x_new, y = expected_improvement), color = "navyblue") +
   geom_vline(mapping = aes(xintercept = x_next_EI), color = "red", linetype = "dashed") +
   xlab("x") +
-  facet_grid(~ iteration) +
+  facet_wrap(~ iteration) +
   theme_bw()
 
 print(plot_1)
 print(plot_2)
+
+### Here we save the data to use it later.
+data_EI <- data
 ```
 
 ## GP lower confidence bound
@@ -375,6 +398,16 @@ data$iteration <- c()
 data$x_x <- c()
 data$y_y <- c()
 acq_data = data.frame()
+lower_confidence_bound <- lower_confidence_bound %>% 
+  as.data.frame() %>%
+  mutate("iteration" = 1) %>% 
+  mutate("x_next_LCB" = NA)
+colnames(lower_confidence_bound) <- c("lower_confidence_bound", "iteration", "x_next_LCB")
+acq_data <- rbind(acq_data, lower_confidence_bound)
+x_next_df_LCB <- data.frame(x_next_LCB) %>% mutate("lower_confidence_bound" = NA) %>% mutate("iteration" = 1)
+colnames(x_next_df_LCB) <- c("x_next_LCB", "lower_confidence_bound", "iteration")
+acq_data <- rbind(acq_data, x_next_df_LCB)
+
 while(t <= 8) {
   evaluation[nrow(evaluation)+1,] = c(x_next_LCB, f(x_next_LCB))
 
@@ -398,10 +431,10 @@ while(t <= 8) {
   lower_confidence_bound <- lower_confidence_bound %>% as.data.frame()
   colnames(lower_confidence_bound) <- "lower_confidence_bound"
   lower_confidence_bound <- lower_confidence_bound %>% 
-    mutate("iteration" = t) %>% 
+    mutate("iteration" = t+1) %>% 
     mutate("x_next_LCB" = NA)
   acq_data <- rbind(acq_data, lower_confidence_bound)
-  x_next_df <- data.frame(x_next_LCB) %>% mutate("lower_confidence_bound" = NA) %>% mutate("iteration" = t)
+  x_next_df <- data.frame(x_next_LCB) %>% mutate("lower_confidence_bound" = NA) %>% mutate("iteration" = t+1)
   acq_data <- rbind(acq_data, x_next_df)
   t <- t+1
 }
@@ -418,19 +451,19 @@ plot_1 <- data %>% ggplot() +
     geom_line(mapping = aes(x = complete_data.xnew.1, y = Y_hat), color = "gold") +
     geom_ribbon(mapping = aes(x = complete_data.xnew.1, y = Y_hat, xmin = 0, xmax = 1, ymin = Y_hat-sqrt(MSE), ymax = Y_hat+sqrt(MSE)), fill = "navyblue", alpha = 0.3) +
     geom_point(mapping = aes(x = x_x, y = y_y)) +
-    facet_grid(~iteration) +
+    facet_wrap(~iteration) +
     xlab("x") +
     ylab("f(x)") +
     theme_bw()
 
 x_new_df <- rep(c(x_new, NA),8) %>% as.data.frame()
 colnames(x_new_df) <- "x_new"
-acq_data <- cbind(acq_data, x_new_df)
+acq_data <- cbind(acq_data %>% filter(iteration < 9), x_new_df)
 plot_2 <- acq_data %>% ggplot() +
   geom_line(mapping = aes(x = x_new, y = lower_confidence_bound), color = "navyblue") +
   geom_vline(mapping = aes(xintercept = x_next_LCB), color = "red", linetype = "dashed") +
   xlab("x") +
-  facet_grid(~ iteration) +
+  facet_wrap(~ iteration) +
   theme_bw()
 
 print(plot_1)
@@ -441,41 +474,15 @@ Here we give a detailed example to show the Expected Improvement acqusition func
 
 ```{r, optimization}
 t <- 1
-while(t <= 10) {
-  evaluation[nrow(evaluation)+1,] = c(x_next_EI, f(x_next_EI))
-
-  fit <- GP_fit(
-    X = evaluation[, "x"],
-    Y = evaluation[, "y"],
-    corr = list(type = "exponential", power = 1.95)
-  )
-
-  x_new <- seq(0, 1, length.out = 100)
-  pred <- predict.GP(fit, xnew = data.frame(x = x_new))
-  mu <- pred$Y_hat
-  sigma <- sqrt(pred$MSE)
-
-  pred <- pred %>% data.frame()
-  print(ggplot() +
-    geom_line(mapping = aes(x = pred$complete_data.xnew.1, y = pred$Y_hat), color = "gold") +
-    geom_ribbon(mapping = aes(x = pred$complete_data.xnew.1, y = pred$Y_hat, xmin = 0, xmax = 1, ymin = pred$Y_hat-sqrt(pred$MSE), ymax = pred$Y_hat+sqrt(pred$MSE)), fill = "navyblue", alpha = 0.3) +
-    geom_point(mapping = aes(x = evaluation[, "x"], y = evaluation[, "y"]), color = "navyblue") +
+while(t < 10) {
+  print(data_EI %>% filter(iteration == t) %>% ggplot() +
+    geom_line(mapping = aes(x = complete_data.xnew.1, y = Y_hat), color = "gold") +
+    geom_ribbon(mapping = aes(x = complete_data.xnew.1, y = Y_hat, xmin = 0, xmax = 1, ymin = Y_hat-sqrt(MSE), ymax = Y_hat+sqrt(MSE)), fill = "navyblue", alpha = 0.3) +
+    geom_point(mapping = aes(x = x_x, y = y_y)) +
     xlab("x") +
     ylab("f(x)") +
-    ggtitle(paste("The", t, "times evaluation.")) +
+    labs(paste("The", t, "iteration")) +
     theme_bw())
-
-  expected_improvement <- map2_dbl(
-    mu, sigma,
-    function(m, s) {
-      if (s == 0) return(0)
-      gamma <- (y_best - m) / s
-      phi <- pnorm(gamma)
-      return(s * (gamma * phi + dnorm(gamma)))
-    }
-  )
-  x_next_EI <- x_new[which.max(expected_improvement)]
-  
   t <- t+1
 }
 ```
@@ -499,20 +506,10 @@ In this section, we will compare the Bayesian optimization with quasi-Newton met
 ### Firstly, we build several equally spaced initial guesses in [0, 1].
 ini_guess <- seq(0, 1, length.out = 9)
 
-### We need to change the function to limit the range of x between 0 and 1.
-f <- function(x) {
-  ### If x is not in [0, 1], we give function a high value.
-  ### Here we give the range a small "buffer" to make the function continuous in [0, 1].
-  if (x > 1.001 || x < -0.001) {
-    return(123)
-  }
-  return((6*x-2)^2*sin(12*x-4))
-}
-
 ### Then we will use quasi-Newton method to try to find the optimal f(x) value.
 n=1
 for(t in ini_guess) {
-  res <- optim(t, f, method = "BFGS")
+  res <- optim(t, f, method = "BFGS", lower = 0, upper = 1)
   writeLines(paste("The", n, "initial guess x0 = ", t, ":\nx=", res$par,"\nf(x)=", res$value, "\nTimes of iteration=", res$counts[1], "\n-----------------------------------------------"))
   n <- n+1
 }
