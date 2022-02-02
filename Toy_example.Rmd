@@ -203,6 +203,10 @@ data$MSE <- c()
 data$iteration <- c()
 data$x_x <- c()
 data$y_y <- c()
+pred <- predict.GP(fit, xnew = data.frame(x = x_new))
+pred <- pred %>% data.frame() %>% select(c("Y_hat", "MSE", "complete_data.xnew.1"))
+pred <- pred %>% mutate("iteration" = 0) %>% mutate("x_x" = NA) %>% mutate("y_y" = NA)
+data <- rbind(data, pred)
 acq_data = data.frame()
 probability_improvement <- probability_improvement %>% 
   as.data.frame() %>%
@@ -256,7 +260,7 @@ while(t <= 10) {
 }
 t <- 1
 nr <- nrow(data)
-for (i in 5:14) {
+for (i in 4:14) {
   for (j in 1:i) {
     data[nr + t,] = c(NA, NA, NA, i-4, evaluation[j, 1], evaluation[j, 2])
     t <- t+1
@@ -300,6 +304,10 @@ data$MSE <- c()
 data$iteration <- c()
 data$x_x <- c()
 data$y_y <- c()
+pred <- predict.GP(fit, xnew = data.frame(x = x_new))
+pred <- pred %>% data.frame() %>% select(c("Y_hat", "MSE", "complete_data.xnew.1"))
+pred <- pred %>% mutate("iteration" = 0) %>% mutate("x_x" = NA) %>% mutate("y_y" = NA)
+data <- rbind(data, pred)
 acq_data = data.frame()
 expected_improvement <- expected_improvement %>% 
   as.data.frame() %>%
@@ -351,7 +359,7 @@ while(t <= 10) {
 }
 t <- 1
 nr <- nrow(data)
-for (i in 5:14) {
+for (i in 4:14) {
   for (j in 1:i) {
     data[nr + t,] = c(NA, NA, NA, i-4, evaluation[j, 1], evaluation[j, 2])
     t <- t+1
@@ -397,6 +405,11 @@ data$MSE <- c()
 data$iteration <- c()
 data$x_x <- c()
 data$y_y <- c()
+pred <- predict.GP(fit, xnew = data.frame(x = x_new))
+pred <- pred %>% data.frame() %>% select(c("Y_hat", "MSE", "complete_data.xnew.1"))
+pred <- pred %>% mutate("iteration" = 0) %>% mutate("x_x" = NA) %>% mutate("y_y" = NA)
+data <- rbind(data, pred)
+  
 acq_data = data.frame()
 lower_confidence_bound <- lower_confidence_bound %>% 
   as.data.frame() %>%
@@ -440,7 +453,7 @@ while(t <= 8) {
 }
 t <- 1
 nr <- nrow(data)
-for (i in 5:12) {
+for (i in 4:12) {
   for (j in 1:i) {
     data[nr + t,] = c(NA, NA, NA, i-4, evaluation[j, 1], evaluation[j, 2])
     t <- t+1
@@ -520,6 +533,134 @@ We can see there are two disadvantages of quasi-Newton method. The first one is 
 The second one is it will need more times of iteration to get the optimal value. The minimum number of iteration in our example is 13 times, which is 3 times more than our Bayesian optimization example.
 
 Also, because here we use a simple function. If we want to optimize a complex function, which cannot or very difficult to get the derivatives, the quasi-Newton method cannot or hard to find the optimum, but the Bayesian optimization can do that.
+
+## Initial Settings
+
+In the previous part, we use 4 evenly spaced initial points. In this part, we will try to use different sets of initial points.
+
+### Three evenly spaced points.
+
+Firstly, we will try 3 evenly spaced points between 0 and 1 as the initial set of points.
+
+```{r 3_ini_points}
+evaluation <- data.frame("x" = c(0, 1/2, 1), "y" = f(c(0, 1/2, 1)))
+
+pip <- function(evaluation, num) {
+  fit <- GP_fit(
+  X = evaluation[, "x"],
+  Y = evaluation[, "y"],
+  corr = list(type = "exponential", power = 1.95)
+)
+
+t <- 1
+data <- data.frame()
+data$Y_hat <- c()
+data$MSE <- c()
+data$iteration <- c()
+data$x_x <- c()
+data$y_y <- c()
+pred <- predict.GP(fit, xnew = data.frame(x = x_new))
+pred <- pred %>% data.frame() %>% select(c("Y_hat", "MSE", "complete_data.xnew.1"))
+pred <- pred %>% mutate("iteration" = 0) %>% mutate("x_x" = NA) %>% mutate("y_y" = NA)
+data <- rbind(data, pred)
+
+acq_data = data.frame()
+expected_improvement <- expected_improvement %>% 
+  as.data.frame() %>%
+  mutate("iteration" = 1) %>% 
+  mutate("x_next_EI" = NA)
+colnames(expected_improvement) <- c("expected_improvement", "iteration", "x_next_EI")
+acq_data <- rbind(acq_data, expected_improvement)
+x_next_df_EI <- data.frame(x_next_EI) %>% mutate("expected_improvement" = NA) %>% mutate("iteration" = 1)
+colnames(x_next_df_EI) <- c("x_next_EI", "expected_improvement", "iteration")
+acq_data <- rbind(acq_data, x_next_df_EI)
+
+while(t <= 10) {
+  evaluation[nrow(evaluation)+1,] = c(x_next_EI, f(x_next_EI))
+
+  fit <- GP_fit(
+    X = evaluation[, "x"],
+    Y = evaluation[, "y"],
+    corr = list(type = "exponential", power = 1.95)
+  )
+
+  x_new <- seq(0, 1, length.out = 100)
+  pred <- predict.GP(fit, xnew = data.frame(x = x_new))
+  mu <- pred$Y_hat
+  sigma <- sqrt(pred$MSE)
+  pred <- pred %>% data.frame() %>% select(c("Y_hat", "MSE", "complete_data.xnew.1"))
+  pred <- pred %>% mutate("iteration" = t) %>% mutate("x_x" = NA) %>% mutate("y_y" = NA)
+  data <- rbind(data, pred)
+  
+  expected_improvement <- map2_dbl(
+    mu, sigma,
+    function(m, s) {
+      if (s == 0) return(0)
+      gamma <- (y_best - m) / s
+      phi <- pnorm(gamma)
+      return(s * (gamma * phi + dnorm(gamma)))
+    }
+  )
+  
+  x_next_EI <- x_new[which.max(expected_improvement)]
+  expected_improvement <- expected_improvement %>% as.data.frame()
+  colnames(expected_improvement) <- "expected_improvement"
+  expected_improvement <- expected_improvement %>% 
+    mutate("iteration" = t+1) %>% 
+    mutate("x_next_EI" = NA)
+  acq_data <- rbind(acq_data, expected_improvement)
+  x_next_df <- data.frame(x_next_EI) %>% mutate("expected_improvement" = NA) %>% mutate("iteration" = t+1)
+  acq_data <- rbind(acq_data, x_next_df)
+  t <- t+1
+}
+t <- 1
+nr <- nrow(data)
+for (i in (num):(num+10)) {
+  for (j in 1:i) {
+    data[nr + t,] = c(NA, NA, NA, i-num, evaluation[j, 1], evaluation[j, 2])
+    t <- t+1
+  }
+}
+
+plot_1 <- data %>% ggplot() +
+    geom_line(mapping = aes(x = complete_data.xnew.1, y = Y_hat), color = "gold") +
+    geom_ribbon(mapping = aes(x = complete_data.xnew.1, y = Y_hat, xmin = 0, xmax = 1, ymin = Y_hat-sqrt(MSE), ymax = Y_hat+sqrt(MSE)), fill = "navyblue", alpha = 0.3) +
+    geom_point(mapping = aes(x = x_x, y = y_y)) +
+    facet_wrap(~iteration) +
+    xlab("x") +
+    ylab("f(x)") +
+    theme_bw()
+
+x_new_df <- rep(c(x_new, NA),10) %>% as.data.frame()
+colnames(x_new_df) <- "x_new"
+acq_data <- cbind(acq_data %>% filter(iteration < 11), x_new_df)
+plot_2 <- acq_data %>% ggplot() +
+  geom_line(mapping = aes(x = x_new, y = expected_improvement), color = "navyblue") +
+  geom_vline(mapping = aes(xintercept = x_next_EI), color = "red", linetype = "dashed") +
+  xlab("x") +
+  facet_wrap(~ iteration) +
+  theme_bw()
+
+print(plot_1)
+print(plot_2)
+return(data)
+} 
+
+data <- pip(evaluation, 3)
+```
+
+### Four randomly located initial points.
+
+Here we use four randomly located points instead of four evenly spaced points as the initial points set.
+
+```{r 4_ran_points}
+set.seed(1234)
+x <- sample.int(100,4)/100
+evaluation <- data.frame("x" = x, "y" = f(x))
+pip(evaluation, 4)
+```
+```
+
 
 
 ## Reference
