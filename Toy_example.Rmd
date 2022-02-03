@@ -238,7 +238,7 @@ cat("The opmized x we find is", evaluation[which.min(evaluation$y),]$x)
 cat("The real optimized x is", x_min)
 ```
 
-We can see that we use 10 evaluations to get the x, and the result is pretty close to the real one.
+We can see that we use 5 evaluations to get the x, and the result is pretty close to the real one.
 
 ## Reference
 
