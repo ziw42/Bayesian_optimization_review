@@ -72,7 +72,7 @@ fit <- GP_fit(
 
 
 
-x_new <- seq(0, 1, length.out = 100)
+x_new <- seq(0, 1, length.out = 100000)
 pred <- predict.GP(fit, xnew = data.frame(x = x_new))
 mu <- pred$Y_hat
 sigma <- sqrt(pred$MSE)
@@ -196,6 +196,7 @@ This acquisition function measures the likelihood that the next x is better(lowe
 
 ```{r POI_iteration}
 evaluation_t <- evaluation
+fit_t <- fit
 t <- 1
 data <- data.frame()
 data$Y_hat <- c()
@@ -227,7 +228,6 @@ while(t <= 10) {
     corr = list(type = "exponential", power = 1.95)
   )
 
-  x_new <- seq(0, 1, length.out = 100)
   pred <- predict.GP(fit, xnew = data.frame(x = x_new))
   mu <- pred$Y_hat
   sigma <- sqrt(pred$MSE)
@@ -297,6 +297,7 @@ This acquisition function takes how large the improvement is into account.
 
 ```{r EI_iteration}
 evaluation <- evaluation_t
+fit <- fit_t
 t <- 1
 data <- data.frame()
 data$Y_hat <- c()
@@ -328,7 +329,6 @@ while(t <= 10) {
     corr = list(type = "exponential", power = 1.95)
   )
 
-  x_new <- seq(0, 1, length.out = 100)
   pred <- predict.GP(fit, xnew = data.frame(x = x_new))
   mu <- pred$Y_hat
   sigma <- sqrt(pred$MSE)
@@ -398,6 +398,7 @@ This acquisition functions balances the area where mean(x) is large and the area
 
 ```{r GP_LCB}
 evaluation <- evaluation_t
+fit <- fit_t
 t <- 1
 data <- data.frame()
 data$Y_hat <- c()
@@ -409,7 +410,6 @@ pred <- predict.GP(fit, xnew = data.frame(x = x_new))
 pred <- pred %>% data.frame() %>% select(c("Y_hat", "MSE", "complete_data.xnew.1"))
 pred <- pred %>% mutate("iteration" = 0) %>% mutate("x_x" = NA) %>% mutate("y_y" = NA)
 data <- rbind(data, pred)
-  
 acq_data = data.frame()
 lower_confidence_bound <- lower_confidence_bound %>% 
   as.data.frame() %>%
@@ -430,7 +430,6 @@ while(t <= 8) {
     corr = list(type = "exponential", power = 1.95)
   )
 
-  x_new <- seq(0, 1, length.out = 100)
   pred <- predict.GP(fit, xnew = data.frame(x = x_new))
   mu <- pred$Y_hat
   sigma <- sqrt(pred$MSE)
@@ -509,7 +508,7 @@ cat("The opmized x we find is", evaluation[which.min(evaluation$y),]$x)
 cat("The real optimized x is", x_min)
 ```
 
-We can see that we use 10 evaluations to get the x, and the result is pretty close to the real one.
+We can see that we use 5 evaluations to get the x, and the result is pretty close to the real one.
 
 ## Comparison
 
@@ -584,7 +583,6 @@ while(t <= 10) {
     corr = list(type = "exponential", power = 1.95)
   )
 
-  x_new <- seq(0, 1, length.out = 100)
   pred <- predict.GP(fit, xnew = data.frame(x = x_new))
   mu <- pred$Y_hat
   sigma <- sqrt(pred$MSE)
@@ -657,10 +655,8 @@ Here we use four randomly located points instead of four evenly spaced points as
 set.seed(1234)
 x <- sample.int(100,4)/100
 evaluation <- data.frame("x" = x, "y" = f(x))
-pip(evaluation, 4)
+data <- pip(evaluation, 4)
 ```
-```
-
 
 
 ## Reference
