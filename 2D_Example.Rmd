@@ -115,11 +115,18 @@ pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
     as.data.frame() %>%
     mutate(iteration = t)
   data <- rbind(data, pred_from_gp)
-  return(evaluation)
+  print(acq_data)
   ### Acquisition function's plot
-  #plot_1 <- acq_data %>%
-  #  ggplot(mapping = aes(x = x, y = acq_value)) +
-  #  geom_line(size = 0.5, color = "navyblue") +
+  plot_1 <- acq_data %>% ggplot() +
+    geom_contour_filled(mapping = aes(x = x1, y = x2, z = acq_value)) +
+    geom_point(data = evaluation[nrow(ini_guess)+1:nrow(evaluation),], 
+               mapping = aes(x = x1, y = x2),
+               color = "red", size = 3) +
+    facet_wrap(~ iteration) +
+    theme_bw()
+  
+  print(plot_1)
+  return(evaluation)
   #  geom_vline(data = evaluation %>% filter(iteration > 0), 
   #             mapping = aes(xintercept = x), color = "red",
   #             linetype = "dashed") +
@@ -159,9 +166,6 @@ pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
 ```
 
 
-```{r}
-
-```
 
 ```{r}
 library(dplyr)
@@ -169,10 +173,21 @@ library(GPfit)
 library(tidyverse)
 x <- data.frame(x1=1, x2=2)
 evaluation <- data.frame(x1 = c(1,2,3), x2 = c(3,4,5)) %>% mutate(y = f(x1, x2))
-a <- pipe(evaluation, "Probability of improvement", 15)
+res <- pipe(evaluation, "Probability of improvement", 15)
 ```
 
-
+```{r}
+x1_plot <- rep(seq(-2, 2, length.out = 101), 101)
+x2_plot <- vector()
+for (t in seq(-1, 3, length.out = 101)) {
+  x2_plot <- c(x2_plot, rep(t, 101))
+}
+plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot))
+plot_data %>% ggplot() +
+  geom_contour_filled(mapping = aes(x = x1, y = x2, z = y), 
+                      breaks = c(-Inf, 10^-3, 10^-2, 10^-1, 1, 10, 100, 1000, Inf)) +
+  theme_bw()
+```
 
 
 
