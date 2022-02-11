@@ -1,0 +1,199 @@
+---
+title: "2D_example"
+author: "Zian Wang"
+date: "2/7/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 2D examples  
+
+In this file, we will apply the Bayesian optimization to 2D problems.  
+
+### Rosenbrock function  
+
+
+
+```{r define_the_function}
+### Since GPfit only supports x in range [0,1], we will map all the inputs into ### [0,1]
+f <- function(x1, x2) {
+  ### Use linear function here, so the range is from [0,10]
+  ### Can use logistic instead
+  x1 = x1*10
+  x2 = x2*10
+  return(100*(x2-x1^2)^2 + (1-x1)^2)
+}
+```
+
+
+```{r}
+pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
+  ### Firstly map the initial guess into [0,1]
+  ini_guess <- ini_guess %>% mutate(x1 = x1/10) %>% mutate(x2 = x2/10)
+  ### Calculate the acquisition function value
+  calculate <- function(pred_mean, pred_sd, y_best) {
+    if(pred_sd == 0) {
+      return(0)
+    }
+    else {
+      value <- switch(acquisition_function,
+          "Probability of improvement" = {pnorm((y_best-pred_mean)/pred_sd)},
+          "Expected improvement" = {z_score <- (y_best-pred_mean)/pred_sd
+                                    cdf_z <- pnorm(z_score)
+                                    pred_sd*(z_score*cdf_z+dnorm(z_score))})
+     return(value)
+    }
+  }
+  
+  ###
+  run_acquisition <- function(df, x_new, kappa) {
+    ### Fit Gaussian process
+    my_gp <- GP_fit(X = df[,1:2], Y = df$y,
+                    corr = list(type = "exponential", power = 2))
+    ### Make predictions
+    my_pred <- predict.GP(my_gp, xnew = x_new)
+    ### Current min
+    y_min <- min(df$y)
+    ### Iterate over predictions
+    switch(acquisition_function,
+      "Confidence lower bound" = {my_pred$Y_hat - kappa*sqrt(my_pred$MSE)},
+      {map2_dbl(my_pred$Y_hat, sqrt(my_pred$MSE),
+                calculate, y_best = y_min)})
+  }
+  
+  ### Initialize the data
+  df_x1 <- rep(seq(0, 1, length.out = 101), 101)
+  df_x2 <- vector()
+  for(i in seq(0, 1, length.out = 101)) {
+    df_x2 <- c(df_x2, rep(i, 101))
+  }
+  df_new <- data.frame(x1 = df_x1,
+                       x2 = df_x2)
+  evaluation <- ini_guess %>% mutate(iteration = 0)
+  acq_data <- data.frame()
+  data <- data.frame()
+  
+  ### Run the iteration
+  t <- 0
+  while(t < iteration) {
+    ### Gaussian process
+    fit <- GP_fit(
+     X = evaluation[,1:2],
+     Y = evaluation$y,
+     corr = list(type = "exponential", power = 2)
+    )
+    pred_from_gp <- predict.GP(fit, xnew = df_new)$complete_data %>%
+      as.data.frame() %>%
+      mutate(iteration = t)
+    data <- rbind(data, pred_from_gp)
+    
+    ### Calculate the acquisition function
+    temp_df <- df_new %>%
+      mutate(acq_value = run_acquisition(evaluation, df_new, kappa)) %>%
+      mutate(iteration = t+1)
+    acq_data <- rbind(acq_data, temp_df)
+    if(acquisition_function == "Confidence lower bound") {
+      x_next <- df_new$x[which.min(temp_df$acq_value)]
+    }
+    else {
+      x_next <- c(df_new$x1[which.max(temp_df$acq_value)], 
+                  df_new$x2[which.max(temp_df$acq_value)])
+    }
+    evaluation[nrow(evaluation)+1,] <- c(x_next, f(x_next[1], x_next[2]), t+1)
+    t <- t+1
+  }
+  ### Calculate the last iteration's data
+  fit <- GP_fit(
+    X = evaluation[,1:2],
+    Y = evaluation$y,
+    corr = list(type = "exponential", power = 2)
+  )
+  pred_from_gp <- predict.GP(fit, xnew = df_new)$complete_data %>%
+    as.data.frame() %>%
+    mutate(iteration = t)
+  data <- rbind(data, pred_from_gp)
+  print(acq_data)
+  ### Acquisition function's plot
+  plot_1 <- acq_data %>% ggplot() +
+    geom_contour_filled(mapping = aes(x = x1, y = x2, z = acq_value)) +
+    geom_point(data = evaluation[nrow(ini_guess)+1:nrow(evaluation),], 
+               mapping = aes(x = x1, y = x2),
+               color = "red", size = 3) +
+    facet_wrap(~ iteration) +
+    theme_bw()
+  
+  print(plot_1)
+  return(evaluation)
+  #  geom_vline(data = evaluation %>% filter(iteration > 0), 
+  #             mapping = aes(xintercept = x), color = "red",
+  #             linetype = "dashed") +
+  #  xlab("x") +
+  #  ylab("acquisition function value") +
+  #  facet_wrap(~ iteration) +
+  #  theme_bw()
+  
+  ### Update the plots
+  #point_data <- data.frame()
+  #t <- 0
+  #while(t < iteration+1) {
+  #  point_data <- rbind(point_data, evaluation %>% 
+  #                        filter(iteration <= t) %>%
+  #                        mutate(iteration = t))
+  #  t <- t+1
+  #}
+  
+  #plot_2 <- data %>%
+  #  ggplot(mapping = aes(x = xnew.1)) +
+  #  geom_line(mapping = aes(y = Y_hat), color = "gold") +
+  #  geom_ribbon(mapping = aes(y = Y_hat, xmin = 0, xmax = 1, 
+  #                            ymin = Y_hat-sqrt(MSE), 
+  #                            ymax = Y_hat+sqrt(MSE)), 
+  #              fill = "navyblue", alpha = 0.3) +
+  #  geom_point(data = point_data, mapping = aes(x = x, y = y),
+  #             color = "navyblue") +
+  #  xlab("x") +
+  #  ylab("y hat") +
+  #  facet_wrap(~ iteration) +
+  #  theme_bw()
+  
+  ### Print the plots
+  #print(plot_1)
+  #print(plot_2)
+}
+```
+
+
+
+```{r}
+library(dplyr)
+library(GPfit)
+library(tidyverse)
+x <- data.frame(x1=1, x2=2)
+evaluation <- data.frame(x1 = c(1,2,3), x2 = c(3,4,5)) %>% mutate(y = f(x1, x2))
+res <- pipe(evaluation, "Probability of improvement", 15)
+```
+
+```{r}
+x1_plot <- rep(seq(-2, 2, length.out = 101), 101)
+x2_plot <- vector()
+for (t in seq(-1, 3, length.out = 101)) {
+  x2_plot <- c(x2_plot, rep(t, 101))
+}
+plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot))
+plot_data %>% ggplot() +
+  geom_contour_filled(mapping = aes(x = x1, y = x2, z = y), 
+                      breaks = c(-Inf, 10^-3, 10^-2, 10^-1, 1, 10, 100, 1000, Inf)) +
+  theme_bw()
+```
+
+
+
+
+
+
+
+
+
