@@ -125,7 +125,26 @@ pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
     facet_wrap(~ iteration) +
     theme_bw()
   
+  x1_plot <- rep(seq(-2, 2, length.out = 101), 101)
+  x2_plot <- vector()
+  for (t in seq(-1, 3, length.out = 101)) {
+    x2_plot <- c(x2_plot, rep(t, 101))
+  }
+  plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot))
+  print(evaluation %>% filter(iteration > 0))
+  plot_2 <- evaluation %>% filter(iteration > 0) %>% 
+    ggplot() +
+    geom_contour_filled(data = plot_data,
+                        mapping = aes(x = x1, y = x2, z = y), 
+                        breaks = c(-Inf, 10^-3, 10^-2, 10^-1, 1, 10, 100, 1000, Inf))+
+    geom_point(mapping = aes(x = x1, y = x2),
+               color = "red",
+               size = 3) +
+    facet_wrap(~ iteration) +
+    theme_bw()
+
   print(plot_1)
+  print(plot_2)
   return(evaluation)
   #  geom_vline(data = evaluation %>% filter(iteration > 0), 
   #             mapping = aes(xintercept = x), color = "red",
