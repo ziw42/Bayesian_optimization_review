@@ -108,6 +108,7 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
   t <- 0
   for(t in 0:iteration) {
     ### Gaussian process
+    
     browser()
     fit <- GP_fit(
      X = evaluation %>% select(x1, x2) %>% as.matrix(),
