@@ -18,21 +18,27 @@ In this file, we will apply the Bayesian optimization to 2D problems.
 
 
 ```{r define_the_function}
-### Since GPfit only supports x in range [0,1], we will map all the inputs into ### [0,1]
-f <- function(x1, x2) {
-  ### Use linear function here, so the range is from [0,10]
-  ### Can use logistic instead
-  x1 = x1*10
-  x2 = x2*10
+### Since GPfit only supports x in range [0,1], we will map all the inputs into [0,1]
+transform_input <- function(x, x_lwr, x_upr)
+{
+  (x - x_lwr) / (x_upr - x_lwr)
+}
+recover_input <- function(x, x_lwr, x_upr) {
+  return(x*(x_upr - x_lwr) + x_lwr)
+}
+
+f <- function(x1, x2, x_lwr, x_upr) {
+  x1 <- recover_input(x1, x_lwr, x_upr)
+  x2 <- recover_input(x2, x_lwr, x_upr)
   return(100*(x2-x1^2)^2 + (1-x1)^2)
 }
 ```
 
 
 ```{r}
-pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
+pipe <- function(ini_guess, acquisition_function, iteration, x_lwr, x_upr, kappa = 2) {
   ### Firstly map the initial guess into [0,1]
-  ini_guess <- ini_guess %>% mutate(x1 = x1/10) %>% mutate(x2 = x2/10)
+  ini_guess <- ini_guess %>% mutate(x1 = transform_input(x1, x_lwr, x_upr)) %>% mutate(x2 = transform_input(x2, x_lwr, x_upr))
   ### Calculate the acquisition function value
   calculate <- function(pred_mean, pred_sd, y_best) {
     if(pred_sd == 0) {
@@ -79,6 +85,7 @@ pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
   ### Run the iteration
   t <- 0
   while(t < iteration) {
+    print(evaluation[,1:2])
     ### Gaussian process
     fit <- GP_fit(
      X = evaluation[,1:2],
@@ -102,7 +109,7 @@ pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
       x_next <- c(df_new$x1[which.max(temp_df$acq_value)], 
                   df_new$x2[which.max(temp_df$acq_value)])
     }
-    evaluation[nrow(evaluation)+1,] <- c(x_next, f(x_next[1], x_next[2]), t+1)
+    evaluation[nrow(evaluation)+1,] <- c(x_next, f(x_next[1], x_next[2], x_lwr, x_upr), t+1)
     t <- t+1
   }
   ### Calculate the last iteration's data
@@ -115,7 +122,9 @@ pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
     as.data.frame() %>%
     mutate(iteration = t)
   data <- rbind(data, pred_from_gp)
-  print(acq_data)
+  
+  ### Recover the x1 and x2 to original space.
+  evaluation <- evaluation %>% mutate(x1 = recover_input(x1, x_lwr, x_upr))
   ### Acquisition function's plot
   plot_1 <- acq_data %>% ggplot() +
     geom_contour_filled(mapping = aes(x = x1, y = x2, z = acq_value)) +
@@ -131,7 +140,6 @@ pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
     x2_plot <- c(x2_plot, rep(t, 101))
   }
   plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot))
-  print(evaluation %>% filter(iteration > 0))
   plot_2 <- evaluation %>% filter(iteration > 0) %>% 
     ggplot() +
     geom_contour_filled(data = plot_data,
@@ -185,23 +193,13 @@ pipe <- function(ini_guess, acquisition_function, iteration, kappa = 2) {
 ```
 
 
-
-```{r}
-library(dplyr)
-library(GPfit)
-library(tidyverse)
-x <- data.frame(x1=1, x2=2)
-evaluation <- data.frame(x1 = c(1,2,3), x2 = c(3,4,5)) %>% mutate(y = f(x1, x2))
-res <- pipe(evaluation, "Probability of improvement", 15)
-```
-
 ```{r}
 x1_plot <- rep(seq(-2, 2, length.out = 101), 101)
 x2_plot <- vector()
 for (t in seq(-1, 3, length.out = 101)) {
   x2_plot <- c(x2_plot, rep(t, 101))
 }
-plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot))
+plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot, ))
 plot_data %>% ggplot() +
   geom_contour_filled(mapping = aes(x = x1, y = x2, z = y), 
                       breaks = c(-Inf, 10^-3, 10^-2, 10^-1, 1, 10, 100, 1000, Inf)) +
@@ -209,7 +207,29 @@ plot_data %>% ggplot() +
 ```
 
 
+```{r}
+set.seed(123)
+ini_set <- maximinLHS(4,2)
+ini_set <- ini_set %>% as.data.frame()
+colnames(ini_set) <- c("x1", "x2")
+ini_set <- ini_set %>% 
+  mutate(x1 = x1*4-2) %>% 
+  mutate(x2 = x2*4-1) %>% 
+  mutate(y = f(x1, x2))
 
+ini_set %>% ggplot() +
+  geom_point(mapping = aes(x = x1, y = x2)) +
+  theme_bw()
+```
+
+
+```{r}
+library(dplyr)
+library(GPfit)
+library(tidyverse)
+x <- data.frame(x1=1, x2=2)
+res <- pipe(ini_set, "Probability of improvement", 15)
+```
 
 
 
