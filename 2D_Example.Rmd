@@ -7,10 +7,22 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-library(dplyr)
-library(ggplot2)
+```
+
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
 library(lhs)
 ```
+
+```{r}
+library(GPfit)
+```
+
+
 
 ## 2D examples  
 
@@ -33,7 +45,7 @@ recover_input <- function(x, x_lwr, x_upr) {
 f <- function(x1, x2, x1_lwr, x1_upr,x2_lwr, x2_upr) {
   x1 <- recover_input(x1, x1_lwr, x1_upr)
   x2 <- recover_input(x2, x2_lwr, x2_upr)
-  return(100*(x2-x1^2)^2 + (1-x1)^2)
+  return(log10(100*(x2-x1^2)^2 + (1-x1)^2))
 }
 ```
 
@@ -74,29 +86,38 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
   }
   
   ### Initialize the data
-  df_x1 <- rep(seq(0, 1, length.out = 101), 101)
-  df_x2 <- vector()
-  for(i in seq(0, 1, length.out = 101)) {
-    df_x2 <- c(df_x2, rep(i, 101))
-  }
-  df_new <- data.frame(x1 = df_x1,
-                       x2 = df_x2)
+  # df_x1 <- rep(seq(0, 1, length.out = 101), 101)
+  # df_x2 <- vector()
+  # for(i in seq(0, 1, length.out = 101)) {
+  #   df_x2 <- c(df_x2, rep(i, 101))
+  # }
+  # df_new <- data.frame(x1 = df_x1,
+  #                      x2 = df_x2)
+  df_new <- expand.grid(x1 = seq(0,1, length.out = 101),
+                        x2 = seq(0,1, length.out = 101),
+                        KEEP.OUT.ATTRS = FALSE, 
+                        stringsAsFactors = FALSE) %>% 
+    as.data.frame()
   evaluation <- ini_guess %>% mutate(iteration = 0)
   acq_data <- data.frame()
   data <- data.frame()
   
+  pred_list_obj <- vector(mode = 'list', length = iteration+1)
+  
   ### Run the iteration
   t <- 0
-  while(t < iteration) {
+  for(t in 0:iteration) {
     ### Gaussian process
+    browser()
     fit <- GP_fit(
-     X = evaluation[,1:2],
+     X = evaluation %>% select(x1, x2) %>% as.matrix(),
      Y = evaluation$y,
      corr = list(type = "exponential", power = 2)
     )
     pred_from_gp <- predict.GP(fit, xnew = df_new)$complete_data %>%
       as.data.frame() %>%
       mutate(iteration = t)
+    pred_list_obj[[t+1]] <- pred_from_gp
     data <- rbind(data, pred_from_gp)
     
     ### Calculate the acquisition function
@@ -112,7 +133,6 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
                   df_new$x2[which.max(temp_df$acq_value)])
     }
     evaluation[nrow(evaluation)+1,] <- c(x_next, f(x_next[1], x_next[2], x1_lwr, x1_upr, x2_lwr, x2_upr), t+1)
-    t <- t+1
   }
   ### Calculate the last iteration's data
   fit <- GP_fit(
@@ -132,16 +152,119 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
   acq_data <- acq_data %>% 
     mutate(x1 = recover_input(x1, x1_lwr, x1_upr)) %>%
     mutate(x2 = recover_input(x2, x2_lwr, x2_upr))
+  
+  return(list(pred_data = data, evaluation = evaluation, acq_data = acq_data))
+}
+```
+
+```{r}
+set.seed(11111)
+x_design <- maximinLHS(n = 4, k = 2) %>% as.matrix() %>% as.data.frame() %>%
+  purrr::set_names(c("x1", "x2"))
+```
+
+```{r}
+x_design %>% ggplot(mapping = aes(x = x1, y = x2)) +
+  geom_point() +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  theme_bw()
+```
+
+```{r}
+x_design <- x_design %>% 
+  mutate(y = f(x1, x2, -2, 2, -1, 3))
+```
+
+```{r}
+res <- pipe(x_design, "Probability of improvement", 9, -2, 2, -1, 3)
+```
+
+
+
+
+
+```{r}
+acq_plots <- function(acq_data, evaluation) {
   ### Acquisition function's plot
   plot_1 <- acq_data %>% ggplot() +
     geom_raster(mapping = aes(x = x1, y = x2, fill = acq_value)) +
   geom_contour(mapping = aes(x = x1, y = x2, z = acq_value),
                color = 'white') +
-    geom_point(data = evaluation[nrow(ini_guess)+1:nrow(evaluation),], 
+    geom_point(data = evaluation %>% filter(iteration > 0), 
                mapping = aes(x = x1, y = x2),
                color = "red", size = 3) +
     facet_wrap(~ iteration) +
+    scale_fill_viridis_c() +
     theme_bw()
+  
+  print(plot_1)
+  
+}
+```
+
+
+```{r}
+acq_plots(res$acq_data, res$evaluation)
+```
+
+```{r}
+gp_pred_mean_plot <- function(pred_data) {
+  pred_data %>% 
+    ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
+    geom_raster(mapping = aes(fill = Y_hat)) +
+    coord_equal() +
+    facet_wrap(~ iteration) +
+    scale_fill_viridis_c(option = "E") +
+    theme_bw()
+}
+```
+
+```{r}
+gp_pred_mean_plot(res$pred_data)
+```
+
+```{r}
+gp_pred_sd_plot <- function(pred_data) {
+  pred_data %>% 
+    ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
+    geom_raster(mapping = aes(fill = MSE)) +
+    coord_equal() +
+    facet_wrap(~ iteration) +
+    scale_fill_viridis_c(option = "A") +
+    theme_bw()
+}
+```
+
+```{r}
+gp_pred_sd_plot(res$pred_data)
+```
+
+```{r}
+gp_pred_sd_plot_2 <- function(pred_data, evaluation) {
+  pred_data %>% 
+    ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
+    geom_raster(mapping = aes(fill = MSE)) +
+    geom_point(data = evaluation %>% 
+                 mutate(x1 = transform_input(x1, -2, 2),
+                        x2 = transform_input(x2, -1, 3)), 
+               mapping = aes(x = x1, y = x2), 
+               shape = 0, color = "cyan") +
+    coord_equal() +
+    facet_wrap(~ iteration) +
+    scale_fill_viridis_c(option = "A") +
+    theme_bw()
+}
+```
+
+
+```{r}
+gp_pred_sd_plot_2(res$pred_data, res$evaluation)
+```
+
+
+
+```{r}
+make_plots <- function() {
   
   x1_plot <- rep(seq(-2, 2, length.out = 101), 101)
   x2_plot <- vector()
@@ -160,46 +283,14 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
     facet_wrap(~ iteration) +
     theme_bw()
 
-  print(plot_1)
+
   print(plot_2)
-  return(evaluation)
-  #  geom_vline(data = evaluation %>% filter(iteration > 0), 
-  #             mapping = aes(xintercept = x), color = "red",
-  #             linetype = "dashed") +
-  #  xlab("x") +
-  #  ylab("acquisition function value") +
-  #  facet_wrap(~ iteration) +
-  #  theme_bw()
-  
-  ### Update the plots
-  #point_data <- data.frame()
-  #t <- 0
-  #while(t < iteration+1) {
-  #  point_data <- rbind(point_data, evaluation %>% 
-  #                        filter(iteration <= t) %>%
-  #                        mutate(iteration = t))
-  #  t <- t+1
-  #}
-  
-  #plot_2 <- data %>%
-  #  ggplot(mapping = aes(x = xnew.1)) +
-  #  geom_line(mapping = aes(y = Y_hat), color = "gold") +
-  #  geom_ribbon(mapping = aes(y = Y_hat, xmin = 0, xmax = 1, 
-  #                            ymin = Y_hat-sqrt(MSE), 
-  #                            ymax = Y_hat+sqrt(MSE)), 
-  #              fill = "navyblue", alpha = 0.3) +
-  #  geom_point(data = point_data, mapping = aes(x = x, y = y),
-  #             color = "navyblue") +
-  #  xlab("x") +
-  #  ylab("y hat") +
-  #  facet_wrap(~ iteration) +
-  #  theme_bw()
-  
-  ### Print the plots
-  #print(plot_1)
-  #print(plot_2)
 }
 ```
+
+
+
+
 
 
 ```{r}
