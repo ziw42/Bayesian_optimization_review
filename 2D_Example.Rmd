@@ -134,8 +134,8 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
     mutate(x2 = recover_input(x2, x2_lwr, x2_upr))
   ### Acquisition function's plot
   plot_1 <- acq_data %>% ggplot() +
-    geom_raster(mapping = aes(fill = acq_data)) +
-  geom_contour(mapping = aes(z = acq_data),
+    geom_raster(mapping = aes(x = x1, y = x2, fill = acq_value)) +
+  geom_contour(mapping = aes(x = x1, y = x2, z = acq_value),
                color = 'white') +
     geom_point(data = evaluation[nrow(ini_guess)+1:nrow(evaluation),], 
                mapping = aes(x = x1, y = x2),
