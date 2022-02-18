@@ -1,0 +1,6 @@
+1. Try 4 - 8 initial points, and 4 corner points and 3x3 design and 9 lhs points in more iterations.
+All acqusition functions.
+
+2. Report
+
+3. Change the pred grid: add some random points?
