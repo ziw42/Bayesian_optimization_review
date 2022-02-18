@@ -137,7 +137,7 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
     geom_raster(mapping = aes(x = x1, y = x2, fill = acq_value)) +
   geom_contour(mapping = aes(x = x1, y = x2, z = acq_value),
                color = 'white') +
-    geom_point(data = evaluation[nrow(ini_guess)+1:nrow(evaluation),], 
+    geom_point(data = evaluation[(nrow(ini_guess)+1):nrow(evaluation),], 
                mapping = aes(x = x1, y = x2),
                color = "red", size = 3) +
     facet_wrap(~ iteration) +
@@ -151,8 +151,8 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
   plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot, x1_lwr, x1_upr, x2_lwr, x2_upr))
   plot_2 <- evaluation %>% filter(iteration > 0) %>% 
     ggplot() +
-    geom_raster(mapping = aes(fill = y)) +
-  geom_contour(mapping = aes(z = y),
+    geom_raster(mapping = aes(x = x1, y = x2, fill = log(y))) +
+  geom_contour(mapping = aes(x = x1, y = x2, z = log(y)),
                color = 'white') +
     geom_point(mapping = aes(x = x1, y = x2),
                color = "red",
