@@ -52,6 +52,7 @@ f <- function(x1, x2, x1_lwr, x1_upr,x2_lwr, x2_upr) {
 
 ```{r}
 pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_lwr, x2_upr, kappa = 2) {
+  browser()
   ini_guess <- ini_guess %>% mutate(x1 = transform_input(x1, x1_lwr, x1_upr)) %>% mutate(x2 = transform_input(x2, x2_lwr, x2_upr))
   ### Calculate the acquisition function value
   calculate <- function(pred_mean, pred_sd, y_best) {
@@ -113,7 +114,8 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
     
     acq_data <- rbind(acq_data, temp_df)
     if(acquisition_function == "Confidence lower bound") {
-      x_next <- df_new$x[which.min(temp_df$acq_value)]
+      x_next <- c(df_new$x1[which.min(temp_df$acq_value)], 
+                  df_new$x2[which.min(temp_df$acq_value)])
     }
     else {
       x_next <- c(df_new$x1[which.max(temp_df$acq_value)], 
@@ -321,16 +323,18 @@ x_design %>% ggplot(mapping = aes(x = x1, y = x2)) +
   coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
   theme_bw()
 x_design <- x_design %>% 
-  mutate(y = f(x1, x2, 0, 1, 0, 1))
-res <- pipe(x_design, "Expected improvement", 9, 0, 1, 0, 1)
+  mutate(x1 = 10*x1) %>%
+  mutate(x2 = 10*x2) %>%
+  mutate(y = f(x1, x2, 0, 10, 0, 10))
+res <- pipe(x_design, "Confidence lower bound", 9, 0, 10, 0, 10)
 
-pred_data %>% 
-    ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
+res$pred_data %>% 
+    ggplot(mapping = aes(x = xnew.1 %>% recover_input(0, 10), y = xnew.2 %>% recover_input(0, 10))) +
     geom_raster(mapping = aes(fill = MSE)) +
-    geom_point(data = evaluation, 
+    geom_point(data = res$evaluation, 
                mapping = aes(x = x1, y = x2), 
                shape = 0, color = "cyan") +
-    coord_equal() +
+    
     facet_wrap(~ iteration) +
     scale_fill_viridis_c(option = "A") +
     theme_bw()
@@ -342,5 +346,37 @@ pred_data %>%
 #gp_pred_mean_plot_2(res$pred_data, res$evaluation)
 ```
 
+Expected improvement
 
+```{r}
+set.seed(123)
+complete_process(4, 10, "Expected improvement")
+complete_process(5, 10, "Expected improvement")
+complete_process(6, 10, "Expected improvement")
+complete_process(7, 10, "Expected improvement")
+complete_process(8, 10, "Expected improvement")
+```
+
+Probability of improvement
+
+```{r}
+set.seed(123)
+complete_process(4, 10, "Probability of improvement")
+complete_process(5, 10, "Probability of improvement")
+complete_process(6, 10, "Probability of improvement")
+complete_process(7, 10, "Probability of improvement")
+complete_process(8, 10, "Probability of improvement")
+```
+
+
+Confidence lower bound
+
+```{r}
+set.seed(123)
+complete_process(4, 10, "Confidence lower bound")
+complete_process(5, 10, "Confidence lower bound")
+complete_process(6, 10, "Confidence lower bound")
+complete_process(7, 10, "Confidence lower bound")
+complete_process(8, 10, "Confidence lower bound")
+```
 
