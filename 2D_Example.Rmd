@@ -45,14 +45,13 @@ recover_input <- function(x, x_lwr, x_upr) {
 f <- function(x1, x2, x1_lwr, x1_upr,x2_lwr, x2_upr) {
   x1 <- recover_input(x1, x1_lwr, x1_upr)
   x2 <- recover_input(x2, x2_lwr, x2_upr)
-  return(log10(100*(x2-x1^2)^2 + (1-x1)^2))
+  return(100*(x2-x1^2)^2 + (1-x1)^2)
 }
 ```
 
 
 ```{r}
 pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_lwr, x2_upr, kappa = 2) {
-  ### Firstly map the initial guess into [0,1]
   ini_guess <- ini_guess %>% mutate(x1 = transform_input(x1, x1_lwr, x1_upr)) %>% mutate(x2 = transform_input(x2, x2_lwr, x2_upr))
   ### Calculate the acquisition function value
   calculate <- function(pred_mean, pred_sd, y_best) {
@@ -70,29 +69,16 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
   }
   
   ###
-  run_acquisition <- function(df, x_new, kappa) {
-    ### Fit Gaussian process
-    my_gp <- GP_fit(X = df[,1:2], Y = df$y,
-                    corr = list(type = "exponential", power = 2))
-    ### Make predictions
-    my_pred <- predict.GP(my_gp, xnew = x_new)
-    ### Current min
-    y_min <- min(df$y)
-    ### Iterate over predictions
+  run_acquisition <- function(my_pred, x1, x2, y_min, kappa) {
+    Y_hat <- (my_pred %>% as.data.frame() %>% filter(xnew.1 == x1, xnew.2 == x2)) $ Y_hat
+    MSE <- (my_pred %>% as.data.frame() %>% filter(xnew.1 == x1, xnew.2 == x2)) $ MSE
     switch(acquisition_function,
-      "Confidence lower bound" = {my_pred$Y_hat - kappa*sqrt(my_pred$MSE)},
-      {map2_dbl(my_pred$Y_hat, sqrt(my_pred$MSE),
+      "Confidence lower bound" = {Y_hat - kappa*sqrt(MSE)},
+      {map2_dbl(Y_hat, sqrt(MSE),
                 calculate, y_best = y_min)})
   }
   
   ### Initialize the data
-  # df_x1 <- rep(seq(0, 1, length.out = 101), 101)
-  # df_x2 <- vector()
-  # for(i in seq(0, 1, length.out = 101)) {
-  #   df_x2 <- c(df_x2, rep(i, 101))
-  # }
-  # df_new <- data.frame(x1 = df_x1,
-  #                      x2 = df_x2)
   df_new <- expand.grid(x1 = seq(0,1, length.out = 101),
                         x2 = seq(0,1, length.out = 101),
                         KEEP.OUT.ATTRS = FALSE, 
@@ -105,11 +91,8 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
   pred_list_obj <- vector(mode = 'list', length = iteration+1)
   
   ### Run the iteration
-  t <- 0
   for(t in 0:iteration) {
     ### Gaussian process
-    
-    browser()
     fit <- GP_fit(
      X = evaluation %>% select(x1, x2) %>% as.matrix(),
      Y = evaluation$y,
@@ -121,10 +104,13 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
     pred_list_obj[[t+1]] <- pred_from_gp
     data <- rbind(data, pred_from_gp)
     
+    y_min = min(evaluation$y)
     ### Calculate the acquisition function
     temp_df <- df_new %>%
-      mutate(acq_value = run_acquisition(evaluation, df_new, kappa)) %>%
+      mutate(acq_value = 
+               run_acquisition(pred_from_gp, x1, x2, y_min, kappa)) %>%
       mutate(iteration = t+1)
+    
     acq_data <- rbind(acq_data, temp_df)
     if(acquisition_function == "Confidence lower bound") {
       x_next <- df_new$x[which.min(temp_df$acq_value)]
@@ -137,13 +123,13 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
   }
   ### Calculate the last iteration's data
   fit <- GP_fit(
-    X = evaluation[,1:2],
+    X = evaluation %>% select(x1, x2) %>% as.matrix(),
     Y = evaluation$y,
     corr = list(type = "exponential", power = 2)
   )
   pred_from_gp <- predict.GP(fit, xnew = df_new)$complete_data %>%
     as.data.frame() %>%
-    mutate(iteration = t)
+    mutate(iteration = t+1)
   data <- rbind(data, pred_from_gp)
   
   ### Recover the x1 and x2 to original space.
@@ -154,15 +140,21 @@ pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_
     mutate(x1 = recover_input(x1, x1_lwr, x1_upr)) %>%
     mutate(x2 = recover_input(x2, x2_lwr, x2_upr))
   
-  return(list(pred_data = data, evaluation = evaluation, acq_data = acq_data))
+  res <- list(x1 = evaluation$x1[which.min(evaluation$y)], x2 = evaluation$x2[which.min(evaluation$y)], y = min(evaluation$y))
+  
+  return(list(pred_data = data, evaluation = evaluation, acq_data = acq_data, result = res))
 }
 ```
+
+Make the initial gues  
 
 ```{r}
 set.seed(11111)
 x_design <- maximinLHS(n = 4, k = 2) %>% as.matrix() %>% as.data.frame() %>%
   purrr::set_names(c("x1", "x2"))
 ```
+
+Visualize the initial guess  
 
 ```{r}
 x_design %>% ggplot(mapping = aes(x = x1, y = x2)) +
@@ -173,16 +165,17 @@ x_design %>% ggplot(mapping = aes(x = x1, y = x2)) +
 
 ```{r}
 x_design <- x_design %>% 
-  mutate(y = f(x1, x2, -2, 2, -1, 3))
+  mutate(y = f(x1, x2, 0, 1, 0, 1))
 ```
+
+
+Do Bayesian optimization and get the data
 
 ```{r}
-res <- pipe(x_design, "Probability of improvement", 9, -2, 2, -1, 3)
+res <- pipe(x_design, "Probability of improvement", 9, 0, 1, 0, 1)
 ```
 
-
-
-
+Build a function that generates the plot of the acquisition function
 
 ```{r}
 acq_plots <- function(acq_data, evaluation) {
@@ -191,11 +184,7 @@ acq_plots <- function(acq_data, evaluation) {
     geom_raster(mapping = aes(x = x1, y = x2, fill = acq_value)) +
   geom_contour(mapping = aes(x = x1, y = x2, z = acq_value),
                color = 'white') +
-<<<<<<< HEAD
-    geom_point(data = evaluation[(nrow(ini_guess)+1):nrow(evaluation),], 
-=======
     geom_point(data = evaluation %>% filter(iteration > 0), 
->>>>>>> 86c60f3a4e96ff9669f68f411e948c1b48cf677e
                mapping = aes(x = x1, y = x2),
                color = "red", size = 3) +
     facet_wrap(~ iteration) +
@@ -207,10 +196,13 @@ acq_plots <- function(acq_data, evaluation) {
 }
 ```
 
+Call the function and generate the plot
 
 ```{r}
 acq_plots(res$acq_data, res$evaluation)
 ```
+
+Build a function that generate "another" plot
 
 ```{r}
 gp_pred_mean_plot <- function(pred_data) {
@@ -224,9 +216,30 @@ gp_pred_mean_plot <- function(pred_data) {
 }
 ```
 
+Call the function and generate the plot
+
 ```{r}
 gp_pred_mean_plot(res$pred_data)
 ```
+
+This fuction generates the same plots with points.  
+
+```{r}
+gp_pred_mean_plot_2 <- function(pred_data, evaluation) {
+  pred_data %>% 
+    ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
+    geom_raster(mapping = aes(fill = Y_hat)) +
+    geom_point(data = evaluation, 
+               mapping = aes(x = x1, y = x2), 
+               shape = 0, color = "cyan") +
+    coord_equal() +
+    facet_wrap(~ iteration) +
+    scale_fill_viridis_c(option = "E") +
+    theme_bw()
+}
+```
+
+This function is used to draw the standard deviation  
 
 ```{r}
 gp_pred_sd_plot <- function(pred_data) {
@@ -240,18 +253,19 @@ gp_pred_sd_plot <- function(pred_data) {
 }
 ```
 
+
 ```{r}
 gp_pred_sd_plot(res$pred_data)
 ```
+
+This function is used to draw the standard deviation and the points together
 
 ```{r}
 gp_pred_sd_plot_2 <- function(pred_data, evaluation) {
   pred_data %>% 
     ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
     geom_raster(mapping = aes(fill = MSE)) +
-    geom_point(data = evaluation %>% 
-                 mutate(x1 = transform_input(x1, -2, 2),
-                        x2 = transform_input(x2, -1, 3)), 
+    geom_point(data = evaluation, 
                mapping = aes(x = x1, y = x2), 
                shape = 0, color = "cyan") +
     coord_equal() +
@@ -267,78 +281,66 @@ gp_pred_sd_plot_2(res$pred_data, res$evaluation)
 ```
 
 
+## Other settings
+
+We build a new function to automatically calculate, iterate, and generate the plots.
 
 ```{r}
-make_plots <- function() {
-  
-  x1_plot <- rep(seq(-2, 2, length.out = 101), 101)
-  x2_plot <- vector()
-  for (t in seq(-1, 3, length.out = 101)) {
-    x2_plot <- c(x2_plot, rep(t, 101))
-  }
-  plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot, x1_lwr, x1_upr, x2_lwr, x2_upr))
-  plot_2 <- evaluation %>% filter(iteration > 0) %>% 
-    ggplot() +
-    geom_raster(mapping = aes(x = x1, y = x2, fill = log(y))) +
-  geom_contour(mapping = aes(x = x1, y = x2, z = log(y)),
-               color = 'white') +
-    geom_point(mapping = aes(x = x1, y = x2),
-               color = "red",
-               size = 3) +
+### Usage:
+###   n = number of initial guess points
+###   iteration = maximum times of iteration
+###   acquisition_function: "Expected improvement", "Probability of improvement", "Confidence lower bound"
+complete_process <- function(ini_n, iteration, acquisition_function) {
+  x_design <- maximinLHS(n = ini_n, k = 2) %>% as.matrix() %>% as.data.frame() %>%
+    purrr::set_names(c("x1", "x2"))
+
+  ### Visualize the initial points
+  x_design %>% ggplot(mapping = aes(x = x1, y = x2)) +
+    geom_point() +
+    coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+    theme_bw()
+  x_design <- x_design %>% 
+    mutate(y = f(x1, x2, 0, 1, 0, 1))
+  res <- pipe(x_design, acquisition_function, iteration, 0, 1, 0, 1)
+  acq_plots(res$acq_data, res$evaluation)
+  plot(gp_pred_sd_plot_2(res$pred_data, res$evaluation))
+  plot(gp_pred_mean_plot_2(res$pred_data, res$evaluation))
+}
+```
+
+```{r}
+### Set another initial settings
+set.seed(1234)
+#complete_process(6, 9, "Expected improvement")
+x_design <- maximinLHS(n = 6, k = 2) %>% as.matrix() %>% as.data.frame() %>%
+  purrr::set_names(c("x1", "x2"))
+
+### Visualize the initial points
+x_design %>% ggplot(mapping = aes(x = x1, y = x2)) +
+  geom_point() +
+  coord_equal(xlim = c(0, 1), ylim = c(0, 1)) +
+  theme_bw()
+x_design <- x_design %>% 
+  mutate(y = f(x1, x2, 0, 1, 0, 1))
+res <- pipe(x_design, "Expected improvement", 9, 0, 1, 0, 1)
+
+pred_data %>% 
+    ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
+    geom_raster(mapping = aes(fill = MSE)) +
+    geom_point(data = evaluation, 
+               mapping = aes(x = x1, y = x2), 
+               shape = 0, color = "cyan") +
+    coord_equal() +
     facet_wrap(~ iteration) +
+    scale_fill_viridis_c(option = "A") +
     theme_bw()
 
 
-  print(plot_2)
-}
+
+#acq_plots(res$acq_data, res$evaluation)
+#gp_pred_sd_plot_2(res$pred_data, res$evaluation)
+#gp_pred_mean_plot_2(res$pred_data, res$evaluation)
 ```
-
-
-
-
-
-
-```{r}
-x1_plot <- rep(seq(-2, 2, length.out = 101), 101)
-x2_plot <- vector()
-for (t in seq(-1, 3, length.out = 101)) {
-  x2_plot <- c(x2_plot, rep(t, 101))
-}
-plot_data <- data.frame(x1 = x1_plot, x2 = x2_plot, y = f(x1_plot, x2_plot, -2, 2, -1, 3))
-plot_data %>% ggplot() +
-  geom_contour_filled(mapping = aes(x = x1, y = x2, z = y), 
-                      breaks = c(-Inf, 10^-3, 10^-2, 10^-1, 1, 10, 100, 1000, Inf)) +
-  theme_bw()
-```
-
-
-```{r}
-set.seed(123)
-ini_set <- maximinLHS(n = 4, k = 2, maxIter = 5001, eps=0.01,
-                           optimize.on = 'result', method = 'iterative')
-ini_set <- ini_set %>% as.data.frame()
-colnames(ini_set) <- c("x1", "x2")
-ini_set <- ini_set %>% 
-  mutate(x1 = x1*4-2) %>% 
-  mutate(x2 = x2*4-1) %>% 
-  mutate(y = f(x1, x2, -2, 2, -1, 3))
-
-ini_set %>% ggplot() +
-  geom_point(mapping = aes(x = x1, y = x2)) +
-  theme_bw()
-```
-
-
-```{r}
-library(dplyr)
-library(GPfit)
-library(tidyverse)
-x <- data.frame(x1=1, x2=2)
-res <- pipe(ini_set, "Probability of improvement", 15, -2, 2, -1, 3)
-```
-
-
-
 
 
 
