@@ -30,18 +30,18 @@ recover_input <- function(x, x_lwr, x_upr) {
 }
 
 # Himmelblau's function
-f <- function(x1, x2, x1_lwr, x1_upr,x2_lwr, x2_upr) {
-  x1 <- recover_input(x1, x1_lwr, x1_upr)
-  x2 <- recover_input(x2, x2_lwr, x2_upr)
-  return((x1^2+x2-11)^2 + (x1+x2^2-7)^2)
-}
-
-# Rosenbrock function
 #f <- function(x1, x2, x1_lwr, x1_upr,x2_lwr, x2_upr) {
 #  x1 <- recover_input(x1, x1_lwr, x1_upr)
 #  x2 <- recover_input(x2, x2_lwr, x2_upr)
-#  return(100*(x2-x1^2)^2 + (1-x1)^2)
+#  return((x1^2+x2-11)^2 + (x1+x2^2-7)^2)
 #}
+
+# Rosenbrock function
+f <- function(x1, x2, x1_lwr, x1_upr,x2_lwr, x2_upr) {
+  x1 <- recover_input(x1, x1_lwr, x1_upr)
+  x2 <- recover_input(x2, x2_lwr, x2_upr)
+  return(100*(x2-x1^2)^2 + (1-x1)^2)
+}
 
 #f <- function(x1, x2, x1_lwr, x1_upr, x2_lwr, x2_upr) {
 #  x1 <- recover_input(x1, x1_lwr, x1_upr)
@@ -213,12 +213,12 @@ complete_process <- function(ini_n, iteration, acquisition_function) {
     purrr::set_names(c("x1", "x2"))
   
   ### Add this line to expand the range
-  x_design <- x_design %>% mutate(x1 = 10*x1-5) %>% mutate(x2 = 10*x2-5)
+  #x_design <- x_design %>% mutate(x1 = 10*x1-5) %>% mutate(x2 = 10*x2-5)
   
   ### Visualize the initial points
   x_design <- x_design %>% 
     mutate(y = f(x1, x2, 0, 1, 0, 1))
-  res <- pipe(x_design, acquisition_function, iteration, -5, 5, -5, 5)
+  res <- pipe(x_design, acquisition_function, iteration, 0, 1, 0, 1)
   #acq_plots(res$acq_data, res$evaluation)
   #plot(gp_pred_sd_plot_2(res$pred_data, res$evaluation))
   #plot(gp_pred_mean_plot_2(res$pred_data, res$evaluation))
@@ -230,61 +230,30 @@ complete_process <- function(ini_n, iteration, acquisition_function) {
 Iterate over different numbers of initial points and different random seeds.  
 
 ```{r}
-find1_opt <- function(temp, x, y, sig, ite) {
-  ### the first time that we find this local optimal(ite_local) != the first time we find all optimal points(ite)
-  ite_local = 999
-  ### Whether algorithm finds this point
-  find_sig = FALSE
-  temp <- temp %>% select(c("x1", "x2", "iteration")) %>% mutate(x1 = x1-x, x2 = x2-y)
-  for(t in 1:nrow(temp)) {
-    if((abs(temp[t,"x1"])<0.3) && (abs(temp[t,"x2"])<0.3)) {
-        if(temp[t,"iteration"] < ite_local){
-           ite_local = temp[t,"iteration"]
-        }
-        find_sig = TRUE
-    }
-  }
-  if(find_sig == TRUE) {
-    sig = sig+1
-  }
-  if((ite_local > ite) && (find_sig == TRUE)) {
-    ite = ite_local
-  }
-  return(list(sig, ite))
-}
-
-save_acq_res <- function(acq_name, res, ini) {
-  sig = 0
-  ite = 0
-  temp <- res$evaluation %>% as.data.frame() %>% filter(y < 1)
-  if(nrow(temp) == 0) {
-    return(data.frame(acq = acq_name, find = 0, ite = 50, ini = ini))
-  }
-  paras <- data.frame(x = c(3, -2.805118, -3.77931, 3.584428), y = c(2, 3.131312, -3.283186, -1.848126))
-  for(t in 1:nrow(paras)) {
-    si = find1_opt(temp, paras[t,"x"], paras[t,"y"], sig, ite)
-    sig = si[[1]]
-    ite = si[[2]]
-  }
-  res_final <- data.frame(acq = acq_name, find = sig, ite = ite, ini = ini)
-  return(res_final)
-}
-
 run_for_one_init_size <- function(t, random_seed)
 {
   set.seed(random_seed)
-  res_1 <- complete_process(t, 50, "Expected improvement")
+  res_1 <- complete_process(t, 20, "Expected improvement")
   set.seed(random_seed)
-  res_2 <- complete_process(t, 30, "Probability of improvement")
+  res_2 <- complete_process(t, 20, "Probability of improvement")
   set.seed(random_seed)
-  res_3 <- complete_process(t, 21, "Confidence lower bound")
+  res_3 <- complete_process(t, 20, "Confidence lower bound")
   
   # book keeping
-  res_1_final <- save_acq_res("E", res_1, t)
+  res_1_final <- data.frame(ini = t, 
+                            acq = "E", 
+                            ite = (res_1$evaluation %>% filter(y == min(res_1$evaluation$y)))$iteration, 
+                            find = min(res_1$evaluation$y) == 0)
   
-  res_2_final <- save_acq_res("P", res_2, t)
+  res_2_final <- data.frame(ini = t, 
+                            acq = "P", 
+                            ite = (res_2$evaluation %>% filter(y == min(res_2$evaluation$y)))$iteration, 
+                            find = min(res_2$evaluation$y) == 0)
   
-  res_3_final <- save_acq_res("C", res_3, t)
+  res_3_final <- data.frame(ini = t, 
+                            acq = "C", 
+                            ite = (res_3$evaluation %>% filter(y == min(res_3$evaluation$y)))$iteration, 
+                            find = min(res_3$evaluation$y) == 0)
   
   bind_rows(res_1_final, res_2_final, res_3_final) %>% 
     mutate(random_seed = random_seed)
@@ -318,27 +287,30 @@ To handle potential errors.
 ```{r}
 safe_run_one_init_size <- purrr::safely(run_for_one_init_size)
 
-safe_results_Ham <- purrr::map2(our_grid$t, our_grid$my_seed,
+safe_results <- purrr::map2(our_grid$t, our_grid$my_seed,
                             safe_run_one_init_size)
 ```
 
 ```{r}
-safe_results_Ham %>% length()
+safe_results %>% length()
 ```
 
 Extract the results when there was NOT an error.  
 
 ```{r}
-returned_sensitivity_results_Ham <- purrr::map(safe_results_Ham,
+returned_sensitivity_results <- purrr::map(safe_results,
                                            function(ll){
                                              if(is.null(ll$error)){
                                                return(ll$result)
                                              }
                                            })
-returned_sensitivity_results_Ham <- purrr::map(returned_sensitivity_results_Ham,
+a <- purrr::map(returned_sensitivity_results,
                 function(ll) {
-                  if(!is.null(ll)){
-                    ll %>% mutate(ite = as.factor(ite))
+                  if(is.null(ll)){
+                    return(1)
+                  }
+                  else{
+                    return(0)
                   }
                 })
 
@@ -346,12 +318,13 @@ returned_sensitivity_results_Ham <- purrr::map(returned_sensitivity_results_Ham,
 
 ```{r}
 ### 44 null 166 not null 166*3 = 498 points
-returned_sensitivity_results_Ham %>% 
+returned_sensitivity_results %>% 
   purrr::map_dfr(function(ll){ll}) %>% 
   group_by(random_seed, ini, acq, find) %>% 
+  filter(ite == min(ite)) %>% 
   ungroup() %>% 
-  ggplot(mapping = aes(x = ini, y = factor(ite, levels=c(seq(1,31))))) +
-  geom_point(mapping = aes(color = as.factor(find))) +
+  ggplot(mapping = aes(x = ini, y = ite)) +
+  geom_point(mapping = aes(color = find)) +
   facet_wrap(~acq) +
   theme_bw()
 ```
@@ -359,7 +332,7 @@ returned_sensitivity_results_Ham %>%
 Ultimately, summarize the number of required iterations across all repeats (random seeds).  
 
 ```{r}
-returned_sensitivity_results_Ham %>% 
+returned_sensitivity_results %>% 
   purrr::map_dfr(function(ll){ll}) %>% 
   group_by(random_seed, ini, acq, find) %>% 
   filter(ite == min(ite)) %>% 
@@ -376,8 +349,8 @@ returned_sensitivity_results_Ham %>%
 
 
 ```{r}
-
-saveRDS(safe_results_Ham, "safe_results_Ham.rds")
-saveRDS(returned_sensitivity_results_Ham, "returned_sentivity_results_Ham.rds")
+saveRDS(res, "res.rds")
+saveRDS(safe_results, "safe_results.rds")
+saveRDS(returned_sensitivity_results, "returned_sentivity_results.rds")
 ```
 
