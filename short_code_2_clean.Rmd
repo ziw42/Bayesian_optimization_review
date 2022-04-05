@@ -1,0 +1,409 @@
+---
+title: "Test"
+author: "Zian Wang"
+date: "2/28/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Read the packages.  
+
+```{r packages}
+library(tidyverse)
+library(lhs)
+library(GPfit)
+```
+  
+Define the benchmark functions.  
+
+```{r}
+# Transform x from [x_lwr, x_upr] -> [0, 1]
+transform_input <- function(x, x_lwr, x_upr)
+{
+  (x - x_lwr) / (x_upr - x_lwr)
+}
+
+# Recover x from [0, 1] -> [x_lwr, x_upr]
+recover_input <- function(x, x_lwr, x_upr) {
+  return(x*(x_upr - x_lwr) + x_lwr)
+}
+
+# Himmelblau's function
+f <- function(x1, x2, x1_lwr, x1_upr,x2_lwr, x2_upr) {
+  x1 <- recover_input(x1, x1_lwr, x1_upr)
+  x2 <- recover_input(x2, x2_lwr, x2_upr)
+  return((x1^2+x2-11)^2 + (x1+x2^2-7)^2)
+}
+
+# Rosenbrock function
+#f <- function(x1, x2, x1_lwr, x1_upr,x2_lwr, x2_upr) {
+#  x1 <- recover_input(x1, x1_lwr, x1_upr)
+#  x2 <- recover_input(x2, x2_lwr, x2_upr)
+#  return(100*(x2-x1^2)^2 + (1-x1)^2)
+#}
+
+#f <- function(x1, x2, x1_lwr, x1_upr, x2_lwr, x2_upr) {
+#  x1 <- recover_input(x1, x1_lwr, x1_upr)
+#  x2 <- recover_input(x2, x2_lwr, x2_upr)
+#  return(20 + (x1^2-10*cos(2*pi*x1)) + (x2^2-10*cos(2*pi*x2)))
+#}
+
+#f <- function(x1, x2, x1_lwr, x1_upr, x2_lwr, x2_upr) {
+#  x1 <- recover_input(x1, x1_lwr, x1_upr)
+#  x2 <- recover_input(x2, x2_lwr, x2_upr)
+#  return((sin(3*pi*x1))^2+((x1-1)^2)*(1+(sin(3*pi*x2))^2) + ((x2-1))^2*(1+(sin(2*pi*x2))^2))
+#}
+```
+  
+The pipe function.  
+  
+```{r}
+### Inputs:
+###   Initial guess (data frame)
+###   Acquisition function (String)
+###   Number of iterations, force algorithm to run this number of times, no early quit (int)
+###   Lower and upper bounds of x1 and x2. This algorithm will firstly transform input initial guesses from [x_lwr, x_upr] to [0, 1] since GPfit package only supports x between 0 and 1. After the calculation, the function will recover x from [0, 1] back to [x_lwr, x_upr] (int)
+###   kappa parameter for confidence lower bound (int, optional)
+pipe <- function(ini_guess, acquisition_function, iteration, x1_lwr, x1_upr, x2_lwr, x2_upr, kappa = 2) {
+  
+  ### Firstly transform x from [x_lwr, x_upr] to [0, 1]
+  ini_guess <- ini_guess %>% 
+    mutate(x1 = transform_input(x1, x1_lwr, x1_upr)) %>% 
+    mutate(x2 = transform_input(x2, x2_lwr, x2_upr))
+  
+  ### Calculate the acquisition function value
+  calculate <- function(pred_mean, pred_sd, y_best) {
+    if(pred_sd == 0) {
+      return(0)
+    }
+    else {
+      value <- switch(acquisition_function,
+          "Probability of improvement" = {pnorm((y_best-pred_mean)/pred_sd)},
+          "Expected improvement" = {z_score <- (y_best-pred_mean)/pred_sd
+                                    cdf_z <- pnorm(z_score)
+                                    pred_sd*(z_score*cdf_z+dnorm(z_score))})
+     return(value)
+    }
+  }
+  
+  ### This function is used to calculate corresponding acquisition function's value of given x1 and x2
+  run_acquisition <- function(my_pred, x1, x2, y_min, kappa) {
+    Y_hat <- (my_pred %>% as.data.frame() %>% filter(xnew.1 == x1, xnew.2 == x2)) $ Y_hat
+    MSE <- (my_pred %>% as.data.frame() %>% filter(xnew.1 == x1, xnew.2 == x2)) $ MSE
+    switch(acquisition_function,
+      "Confidence lower bound" = {Y_hat - kappa*sqrt(MSE)},
+      {map2_dbl(Y_hat, sqrt(MSE),
+                calculate, y_best = y_min)})
+  }
+  
+  ### Initialize the data grid for choosing.
+  ### All evaluation points will be chosen from this df_new grid.
+  df_new <- expand.grid(x1 = seq(0,1, length.out = 101),
+                        x2 = seq(0,1, length.out = 101),
+                        KEEP.OUT.ATTRS = FALSE, 
+                        stringsAsFactors = FALSE) %>% as.data.frame()
+  
+  ### Add corresponding time of iteration to the initial guess.
+  ### Evaluation will be used as the data frame which stores all data points evaluated in the process.
+  evaluation <- ini_guess %>% mutate(iteration = 0)
+  
+  ### These three variables are not used in this file's task, they can be used to generate prediction and acquisition plots of each iteration 
+  acq_data <- data.frame()
+  data <- data.frame()
+  pred_list_obj <- vector(mode = 'list', length = iteration+1)
+  
+  ### Run the iteration
+  for(t in 0:iteration) {
+    ### Gaussian process
+    fit <- GP_fit(
+     X = evaluation %>% select(x1, x2) %>% as.matrix(),
+     Y = evaluation$y,
+     corr = list(type = "exponential", power = 2)
+    )
+    ### Predict Y_hat, MSE from GPfit result
+    pred_from_gp <- predict.GP(fit, xnew = df_new)$complete_data %>%
+      as.data.frame() %>%
+      mutate(iteration = t)
+    ### Not used
+    pred_list_obj[[t+1]] <- pred_from_gp
+    data <- rbind(data, pred_from_gp)
+    ###
+    
+    y_min = min(evaluation$y)
+    ### Calculate the acquisition function's values of each point on the df_new grid.
+    temp_df <- df_new %>%
+      mutate(acq_value = 
+               run_acquisition(pred_from_gp, x1, x2, y_min, kappa)) %>%
+      mutate(iteration = t+1)
+    
+    ### Not used
+    acq_data <- rbind(acq_data, temp_df)
+    ###
+    
+    ### Find the point with minimal acquisition function value as the point to be evaluated next
+    if(acquisition_function == "Confidence lower bound") {
+      x_next <- c(df_new$x1[which.min(temp_df$acq_value)], 
+                  df_new$x2[which.min(temp_df$acq_value)])
+    }
+    ### Find the point with maximum acquisition function value as the point to be evaluated next
+    else {
+      x_next <- c(df_new$x1[which.max(temp_df$acq_value)], 
+                  df_new$x2[which.max(temp_df$acq_value)])
+    }
+    ### Now x1 and x2 are in range [0, 1], we have to recover them back to [x_lwr, x_upr] to calculate the correct benchmark function value
+    evaluation[nrow(evaluation)+1,] <- c(x_next, f(x_next[1], x_next[2], x1_lwr, x1_upr, x2_lwr, x2_upr), t+1)
+  }
+  ### Calculate the last iteration's data
+  fit <- GP_fit(
+    X = evaluation %>% select(x1, x2) %>% as.matrix(),
+    Y = evaluation$y,
+    corr = list(type = "exponential", power = 2)
+  )
+  pred_from_gp <- predict.GP(fit, xnew = df_new)$complete_data %>%
+    as.data.frame() %>%
+    mutate(iteration = t+1)
+  data <- rbind(data, pred_from_gp)
+  
+  ### Recover the x1 and x2 to original space.
+  evaluation <- evaluation %>% 
+    mutate(x1 = recover_input(x1, x1_lwr, x1_upr)) %>%
+    mutate(x2 = recover_input(x2, x2_lwr, x2_upr))
+  acq_data <- acq_data %>% 
+    mutate(x1 = recover_input(x1, x1_lwr, x1_upr)) %>%
+    mutate(x2 = recover_input(x2, x2_lwr, x2_upr))
+  data <- data %>% 
+    mutate(xnew.1 = recover_input(xnew.1, x1_lwr, x1_upr)) %>%
+    mutate(xnew.2 = recover_input(xnew.2, x2_lwr, x2_upr))
+  
+  res_index <- which(evaluation$y == min(evaluation$y))
+  res <- list(x1 = evaluation$x1[res_index], x2 = evaluation$x2[res_index], y = evaluation$y[res_index])
+  
+  return(list(pred_data = data, evaluation = evaluation, acq_data = acq_data, result = res))
+}
+```
+
+The wrap up function.  
+
+```{r}
+complete_process <- function(ini_n, iteration, acquisition_function) {
+  ### LHS algorithm to generate initial guesses.
+  x_design <- maximinLHS(n = ini_n, k = 2) %>% as.matrix() %>% as.data.frame() %>%
+    purrr::set_names(c("x1", "x2"))
+  
+  ### Add this line to expand the range.
+  x_design <- x_design %>% mutate(x1 = 10*x1-5) %>% mutate(x2 = 10*x2-5)
+  
+  ### Add y values
+  x_design <- x_design %>% 
+    mutate(y = f(x1, x2, 0, 1, 0, 1))
+  ### Change x_lwr and x_upr here
+  res <- pipe(x_design, acquisition_function, iteration, -5, 5, -5, 5)
+  #acq_plots(res$acq_data, res$evaluation)
+  #plot(gp_pred_sd_plot_2(res$pred_data, res$evaluation))
+  #plot(gp_pred_mean_plot_2(res$pred_data, res$evaluation))
+  
+  return(res)
+}
+```
+  
+Iterate over different numbers of initial points and different random seeds.  
+
+```{r}
+find1_opt <- function(temp, x, y, sig, ite) {
+  ### the first time that we find this local optimal(ite_local) != the first time we find all optimal points(ite)
+  ite_local = 999
+  ### Whether algorithm finds this point
+  find_sig = FALSE
+  temp <- temp %>% select(c("x1", "x2", "iteration")) %>% mutate(x1 = x1-x, x2 = x2-y)
+  for(t in 1:nrow(temp)) {
+    ### We tolerate error smaller than 0.3
+    if((abs(temp[t,"x1"])<0.3) && (abs(temp[t,"x2"])<0.3)) {
+        if(temp[t,"iteration"] < ite_local){
+           ite_local = temp[t,"iteration"]
+        }
+        find_sig = TRUE
+    }
+  }
+  if(find_sig == TRUE) {
+    sig = sig+1
+  }
+  if((ite_local > ite) && (find_sig == TRUE)) {
+    ite = ite_local
+  }
+  return(list(sig, ite))
+}
+
+save_acq_res <- function(acq_name, res, ini) {
+  ### Sig is the number of found optimistic points.
+  ### Ite is the number of iterations the algorithm uses to find the last optimistic point.
+  sig = 0
+  ite = 0
+  ### This filter is used to firstly exclude points whose y value is too big to be optimistic.
+  temp <- res$evaluation %>% as.data.frame() %>% filter(y < 1)
+  
+  ### If not remain, set find=0 and ite=50.
+  if(nrow(temp) == 0) {
+    return(data.frame(acq = acq_name, find = 0, ite = 50, ini = ini))
+  }
+  
+  ### Paras stores the optimistic points' x1 and x2 values.
+  paras <- data.frame(x = c(3, -2.805118, -3.77931, 3.584428), y = c(2, 3.131312, -3.283186, -1.848126))
+  ### Search one point in one loop.
+  for(t in 1:nrow(paras)) {
+    si = find1_opt(temp, paras[t,"x"], paras[t,"y"], sig, ite)
+    sig = si[[1]]
+    ite = si[[2]]
+  }
+  
+  res_final <- data.frame(acq = acq_name, find = sig, ite = ite, ini = ini)
+  return(res_final)
+}
+
+run_for_one_init_size <- function(t, random_seed)
+{
+  set.seed(random_seed)
+  res_1 <- complete_process(t, 50, "Expected improvement")
+  set.seed(random_seed)
+  res_2 <- complete_process(t, 30, "Probability of improvement")
+  set.seed(random_seed)
+  res_3 <- complete_process(t, 21, "Confidence lower bound")
+  
+  # book keeping
+  res_1_final <- save_acq_res("E", res_1, t)
+  
+  res_2_final <- save_acq_res("P", res_2, t)
+  
+  res_3_final <- save_acq_res("C", res_3, t)
+  
+  bind_rows(res_1_final, res_2_final, res_3_final) %>% 
+    mutate(random_seed = random_seed)
+}
+```
+
+Create a grid of initial sizes and random seed values.  
+
+```{r}
+our_grid <- expand.grid(t = 4:10,
+                        my_seed = 1:30,
+                        KEEP.OUT.ATTRS = FALSE,
+                        stringsAsFactors = FALSE) %>% 
+  as.data.frame() %>% tibble::as_tibble()
+
+our_grid %>% dim()
+
+our_grid %>% head()
+```
+
+Run the study to check the behavior as the initial size is fixed but the initial size is randomly changed.  
+
+To handle potential errors.  
+
+```{r}
+safe_run_one_init_size <- purrr::safely(run_for_one_init_size)
+
+safe_results_Ham <- purrr::map2(our_grid$t, our_grid$my_seed,
+                            safe_run_one_init_size)
+```
+
+```{r}
+safe_results_Ham %>% length()
+```
+
+Extract the results when there was NOT an error.  
+
+```{r}
+returned_sensitivity_results_Ham <- purrr::map(safe_results_Ham,
+                                           function(ll){
+                                             if(is.null(ll$error)){
+                                               return(ll$result)
+                                             }
+                                           })
+returned_sensitivity_results_Ham <- purrr::map(returned_sensitivity_results_Ham,
+                function(ll) {
+                  if(!is.null(ll)){
+                    ll %>% mutate(ite = as.factor(ite))
+                  }
+                })
+
+```
+
+```{r}
+### 44 null 166 not null 166*3 = 498 points
+returned_sensitivity_results_Ham %>% 
+  purrr::map_dfr(function(ll){ll}) %>% 
+  group_by(random_seed, ini, acq, find) %>% 
+  ungroup() %>% 
+  ggplot(mapping = aes(x = ini, y = factor(ite, levels=c(seq(1,31))))) +
+  geom_point(mapping = aes(color = as.factor(find))) +
+  facet_wrap(~acq) +
+  theme_bw()
+```
+
+Ultimately, summarize the number of required iterations across all repeats (random seeds).  
+
+```{r}
+returned_sensitivity_results_Ham %>% 
+  purrr::map_dfr(function(ll){ll}) %>% 
+  group_by(random_seed, ini, acq, find) %>% 
+  filter(ite == min(ite)) %>% 
+  ungroup() %>% 
+  ggplot(mapping = aes(x = ini, y = ite)) +
+  geom_boxplot(mapping = aes(group = interaction(acq, ini))) +
+  stat_summary(fun.data = 'mean_se',
+               fun.args = list(mult = 2),
+               mapping = aes(group = interaction(acq, ini)),
+               color = 'red') +
+  facet_wrap(~acq) +
+  theme_bw()
+```
+
+The functions that generate the plots. (Unused in this file)
+
+```{r}
+acq_plots <- function(acq_data, evaluation) {
+  ### Acquisition function's plot
+  plot_1 <- acq_data %>% ggplot() +
+    geom_raster(mapping = aes(x = x1, y = x2, fill = acq_value)) +
+  geom_contour(mapping = aes(x = x1, y = x2, z = acq_value),
+               color = 'white') +
+    geom_point(data = evaluation %>% filter(iteration > 0), 
+               mapping = aes(x = x1, y = x2),
+               color = "red", size = 3) +
+    facet_wrap(~ iteration) +
+    scale_fill_viridis_c() +
+    theme_bw()
+  
+  print(plot_1)
+}
+
+gp_pred_mean_plot_2 <- function(pred_data, evaluation) {
+  pred_data %>% 
+    ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
+    geom_raster(mapping = aes(fill = Y_hat)) +
+    geom_point(data = evaluation, 
+               mapping = aes(x = x1, y = x2), 
+               shape = 0, color = "cyan") +
+    geom_point(data = data.frame(x = c(3, -2.805118, -3.77931, 3.584428), y = c(2, 3.131312, -3.283186, -1.848126)), mapping = aes(x = x, y = y), color = "red") +
+    coord_equal() +
+    facet_wrap(~ iteration) +
+    scale_fill_viridis_c(option = "E") +
+    theme_bw()
+}
+
+gp_pred_sd_plot_2 <- function(pred_data, evaluation) {
+  pred_data %>% 
+    ggplot(mapping = aes(x = xnew.1, y = xnew.2)) +
+    geom_raster(mapping = aes(fill = MSE)) +
+    geom_point(data = evaluation, 
+               mapping = aes(x = x1, y = x2), 
+               shape = 0, color = "cyan") +
+    coord_equal() +
+    facet_wrap(~ iteration) +
+    scale_fill_viridis_c(option = "A") +
+    theme_bw()
+}
+```
+
