@@ -3,7 +3,6 @@
 library(tidyverse)
 
 ### define the function just for 2 variables
-rosenbrock <- function(x, y, a = 1, b = 100)
 {
   (a - x)^2 + b*(y - x^2)^2
 }
@@ -249,3 +248,4 @@ lhs_maxmin_C %>%
              size = 7, shape = 0) +
   coord_equal() +
   theme_bw()
+

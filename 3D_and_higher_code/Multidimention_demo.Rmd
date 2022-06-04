@@ -93,9 +93,7 @@ pipe <- function(ini_guess, acquisition_function, iteration, lwr, upr, kappa = 2
   
   ### This function is used to calculate corresponding acquisition function's value of given x1 and x2
   ###############################################################
-  run_acquisition <- function(my_pred, x_list, y_min, kappa) {
-    Y_hat <- (my_pred %>% as.data.frame() %>% filter(xnew.1 == x1, xnew.2 == x2, xnew.3 == x3)) $ Y_hat
-    MSE <- (my_pred %>% as.data.frame() %>% filter(xnew.1 == x1, xnew.2 == x2, xnew.3 == x3)) $ MSE
+  run_acquisition <- function(Y_hat, MSE, y_min, kappa) {
     switch(acquisition_function,
       "Confidence lower bound" = {Y_hat - kappa*sqrt(MSE)},
       {map2_dbl(Y_hat, sqrt(MSE),
@@ -127,7 +125,7 @@ pipe <- function(ini_guess, acquisition_function, iteration, lwr, upr, kappa = 2
   }
   df_new <- expand_grid(ncol(ini_guess)-1, 101)
   
-  ### Add corresponding time of iteration to the initial guess.
+  ### Add corresponding iteration to the initial guess.
   ### Evaluation will be used as the data frame which stores all data points evaluated in the process.
   evaluation <- ini_guess %>% mutate(iteration = 0)
   
@@ -139,29 +137,34 @@ pipe <- function(ini_guess, acquisition_function, iteration, lwr, upr, kappa = 2
   ### Run the iteration
   for(t in 0:iteration) {
     ### Gaussian process
+    browser()
     fit <- GP_fit(
+     ### Excepte y and iteration.
      X = evaluation[c(-ncol(evaluation), -(ncol(evaluation)-1))] %>% as.matrix(),
      Y = evaluation$y,
      corr = list(type = "exponential", power = 2)
     )
     ### Predict Y_hat, MSE from GPfit result
-    pred_from_gp <- predict.GP(fit, xnew = df_new)$complete_data %>%
+    pred_from_gp <- predict.GP(fit, xnew = df_new)$complete_data %>% 
       as.data.frame() %>%
       mutate(iteration = t)
     ### Not used
-    pred_list_obj[[t+1]] <- pred_from_gp
-    data <- rbind(data, pred_from_gp)
+    #pred_list_obj[[t+1]] <- pred_from_gp
+    #data <- rbind(data, pred_from_gp)
     ###
     
     y_min = min(evaluation$y)
     ### Calculate the acquisition function's values of each point on the df_new grid.
+    #    Y_hat <- (my_pred %>% as.data.frame() %>% filter(xnew.1 == x1, xnew.2 == x2, xnew.3 == x3)) $ Y_hat
+    #    MSE <- (my_pred %>% as.data.frame() %>% filter(xnew.1 == x1, xnew.2 == x2, xnew.3 == x3)) $ MSE
     temp_df <- df_new %>%
+      mutate(Y_hat = pred_from_gp[which(pred_from_gp$a == min(df$Amount)), ]) %>%
       mutate(acq_value = 
                run_acquisition(pred_from_gp, x1, x2, x3, y_min, kappa)) %>%
       mutate(iteration = t+1)
     
     ### Not used
-    acq_data <- rbind(acq_data, temp_df)
+    #acq_data <- rbind(acq_data, temp_df)
     ###
     
     ### Find the point with minimal acquisition function value as the point to be evaluated next
@@ -240,7 +243,7 @@ complete_process <- function(ini_n, iteration, acquisition_function) {
   
   ### Add y values
   x_design <- x_design %>% 
-    mutate(y = f(x1, x2, x3, 0, 1))
+    mutate(y = f(c(x1, x2, x3), 0, 1))
   ### Change x_lwr and x_upr here
   res <- pipe(x_design, acquisition_function, iteration, 0, 2)
   #acq_plots(res$acq_data, res$evaluation)

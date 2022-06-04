@@ -243,8 +243,8 @@ find1_opt <- function(temp, x1_, x2_, x3_, sig, ite) {
   find_sig = FALSE
   temp <- temp %>% select(c("x1", "x2", "x3", "iteration")) %>% mutate(x1 = x1-x1_, x2 = x2-x2_, x3 = x3-x3_)
   for(t in 1:nrow(temp)) {
-    ### We tolerate error smaller than 0.3
-    if((abs(temp[t,"x1"])<0.1) && (abs(temp[t,"x2"])<0.1) && (abs(temp[t, "x3"]<0.1))) {
+    ### We tolerate error smaller than 0.1
+    if((abs(temp[t,"x1"])<0.1) && (abs(temp[t,"x2"])<0.1) && (abs(temp[t,"x3"]<0.1))) {
         if(temp[t,"iteration"] < ite_local){
            ite_local = temp[t,"iteration"]
         }
@@ -274,11 +274,12 @@ save_acq_res <- function(acq_name, res, ini) {
     return(data.frame(acq = acq_name, find = 0, ite = 50, ini = ini))
   }
   
-  ### Paras stores the optimistic points' x1 and x2 values.
+  ### Paras stores the optimistic points' x1, x2, and x3 values.
+  ### For Rosenbrock function, the known optimal value is (1,1,1)
   paras <- data.frame(x1 = c(1), x2 = c(1), x3 = c(1))
   ### Search one point in one loop.
   for(t in 1:nrow(paras)) {
-    si = find1_opt(temp, paras[t,"x1"], paras[t,"x2"], paras[t, "x2"], sig, ite)
+    si = find1_opt(temp, paras[t,"x1"], paras[t,"x2"], paras[t,"x3"], sig, ite)
     sig = si[[1]]
     ite = si[[2]]
   }
@@ -292,12 +293,12 @@ run_for_one_init_size <- function(t, random_seed)
 {
   ### Sometimes the number of iteration needed to be changed here to avoid making too much error.
   set.seed(random_seed)
-  res_1 <- complete_process(t, 10, "Expected improvement")
+  res_1 <- complete_process(t, 30, "Expected improvement")
   set.seed(random_seed)
-  res_2 <- complete_process(t, 10, "Probability of improvement")
+  res_2 <- complete_process(t, 30, "Probability of improvement")
   set.seed(random_seed)
-  res_3 <- complete_process(t, 10, "Confidence lower bound")
-  browser()
+  res_3 <- complete_process(t, 30, "Confidence lower bound")
+  #browser()
   ### Extract the results from res.
   res_1_final <- save_acq_res("E", res_1, t)
   
@@ -313,8 +314,8 @@ run_for_one_init_size <- function(t, random_seed)
 Create a grid of initial sizes and random seed values.  
 
 ```{r}
-our_grid <- expand.grid(t = 5,
-                        my_seed = 1,
+our_grid <- expand.grid(t = 5:10,
+                        my_seed = 1:5,
                         KEEP.OUT.ATTRS = FALSE,
                         stringsAsFactors = FALSE) %>% 
   as.data.frame() %>% tibble::as_tibble()
