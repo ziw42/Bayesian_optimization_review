@@ -39,18 +39,20 @@ recover_input <- function(x, x_lwr, x_upr) {
 #}
 
 # Rosenbrock function
+#f <- function(x1, x2, x3, lwr, upr) {
+#  x1 <- recover_input(x1, lwr, upr)
+#  x2 <- recover_input(x2, lwr, upr)
+#  x3 <- recover_input(x3, lwr, upr)
+#  return(100*(x2-x1^2)^2 + (1-x1)^2 + 100*(x3-x2^2)^2 + (1-x2)^2)
+#}
+
+# Rastrigin function
 f <- function(x1, x2, x3, lwr, upr) {
   x1 <- recover_input(x1, lwr, upr)
   x2 <- recover_input(x2, lwr, upr)
   x3 <- recover_input(x3, lwr, upr)
-  return(100*(x2-x1^2)^2 + (1-x1)^2 + 100*(x3-x2^2)^2 + (1-x2)^2)
+  return(30 + (x1^2-10*cos(2*pi*x1)) + (x2^2-10*cos(2*pi*x2)) + (x3^2-10*cos(2*pi*x3)))
 }
-
-#f <- function(x1, x2, x1_lwr, x1_upr, x2_lwr, x2_upr) {
-#  x1 <- recover_input(x1, x1_lwr, x1_upr)
-#  x2 <- recover_input(x2, x2_lwr, x2_upr)
-#  return(20 + (x1^2-10*cos(2*pi*x1)) + (x2^2-10*cos(2*pi*x2)))
-#}
 
 #f <- function(x1, x2, x1_lwr, x1_upr, x2_lwr, x2_upr) {
 #  x1 <- recover_input(x1, x1_lwr, x1_upr)
@@ -314,7 +316,7 @@ run_for_one_init_size <- function(t, random_seed)
 Create a grid of initial sizes and random seed values.  
 
 ```{r}
-our_grid <- expand.grid(t = 5:10,
+our_grid <- expand.grid(t = 5:23,
                         my_seed = 1:5,
                         KEEP.OUT.ATTRS = FALSE,
                         stringsAsFactors = FALSE) %>% 
